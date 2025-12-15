@@ -1,0 +1,1 @@
+o comando via script para disparar a scync no package.json 
