@@ -10,9 +10,7 @@ export class LeadsController {
 
   @Post('import-one')
   async importOne(@Body() body: ImportLeadInput) {
-    const lead = await this.leadsImport.findOrCreateLeadByIdentifiers(body);
-    return { ok: true, lead };
+    // TODO: Implementar endpoint
+    return { ok: false, message: 'Endpoint não implementado' };
   }
 }
-
-

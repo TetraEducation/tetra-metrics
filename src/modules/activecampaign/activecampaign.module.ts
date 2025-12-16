@@ -32,5 +32,3 @@ import { ActiveCampaignService } from '@/modules/activecampaign/application/serv
   exports: [ActiveCampaignService],
 })
 export class ActiveCampaignModule {}
-
-

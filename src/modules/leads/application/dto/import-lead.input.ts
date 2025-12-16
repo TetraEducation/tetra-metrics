@@ -6,7 +6,3 @@ export interface ImportLeadInput {
   name?: string | null;
   source?: LEADS_SOURCE | string | null;
 }
-
-
-
-

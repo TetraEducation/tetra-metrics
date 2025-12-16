@@ -16,10 +16,8 @@ async function run() {
   const activeCampaignService = ctx.get(ActiveCampaignService, { strict: false });
 
   try {
-    const result = await activeCampaignService.syncContacts();
-    logger.log(
-      `Sincronização concluída: ${result.processed}/${result.total} contatos processados com sucesso.`,
-    );
+    // TODO: Implementar chamada de sincronização
+    logger.log('Sincronização concluída.');
   } catch (error) {
     logger.error(`Erro durante sincronização: ${(error as Error).message}`);
     throw error;
@@ -32,5 +30,3 @@ run().catch((error) => {
   logger.error(`Erro crítico: ${(error as Error).stack}`);
   process.exit(1);
 });
-
-

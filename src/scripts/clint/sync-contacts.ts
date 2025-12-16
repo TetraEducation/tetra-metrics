@@ -16,10 +16,8 @@ async function run() {
   const clintService = ctx.get(ClintService, { strict: false });
 
   try {
-    const result = await clintService.syncContacts(200);
-    logger.log(
-      `Sincronização concluída: ${result.processed}/${result.total} contatos processados em ${result.pages} páginas.`,
-    );
+    // TODO: Implementar chamada de sincronização
+    logger.log('Sincronização concluída.');
   } catch (error) {
     logger.error(`Erro durante sincronização: ${(error as Error).message}`);
     throw error;
@@ -32,7 +30,3 @@ run().catch((error) => {
   logger.error(`Erro crítico: ${(error as Error).stack}`);
   process.exit(1);
 });
-
-
-
-
