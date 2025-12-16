@@ -56,6 +56,14 @@ pids
 report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 
 
-./folders
-
+# Planilhas e arquivos de dados
+folders/
+not-import/
+*.xlsx
+*.csv
+*.xls
 processed-leads.csv
+
+# Arquivos temporários de planilhas
+**/.~lock.*
+**/*.lock.*

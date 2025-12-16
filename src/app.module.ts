@@ -6,7 +6,7 @@ import { IamModule } from '@/modules/iam/iam.modules';
 import { MetricsModule } from '@/modules/metrics/metrics.module';
 import { ClintModule } from '@/modules/clint/clint.module';
 import { ActiveCampaignModule } from '@/modules/activecampaign/activecampaign.module';
-
+import { ImportsModule } from '@/modules/imports/imports.module';
 
 @Module({
   imports: [
@@ -17,6 +17,7 @@ import { ActiveCampaignModule } from '@/modules/activecampaign/activecampaign.mo
     MetricsModule,
     ClintModule,
     ActiveCampaignModule,
+    ImportsModule,
   ],
   controllers: [],
   providers: [],

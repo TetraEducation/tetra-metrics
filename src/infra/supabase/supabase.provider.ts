@@ -14,6 +14,10 @@ export const supabaseProvider: Provider = {
   useFactory: () => {
     const url = requiredEnv('SUPABASE_URL');
     const key = requiredEnv('SUPABASE_SERVICE_ROLE_KEY');
-    return createClient(url, key);
+    return createClient(url, key, {
+      auth: {
+        persistSession: false, // Backend only - não precisa persistir sessão
+      },
+    });
   },
 };

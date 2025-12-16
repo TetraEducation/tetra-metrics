@@ -1,11 +1,12 @@
 # tetra-metrics — Schema do Banco (Supabase/Postgres)
 
-Este documento descreve **todas as tabelas** do schema CANONICAL do `tetra-metrics`, com **atributos, finalidade, relacionamentos e regras de unicidade**. A ideia é você usar isso como **fonte única (SSOT)** no código para evitar drift de nomes/colunas.
+Este documento descreve o schema CANONICAL do `tetra-metrics`, com **tabelas, atributos, regras de unicidade e contratos operacionais** (ex.: deduplicação e RPCs).
+Use como **SSOT** no código para evitar drift de nomes/colunas.
 
 > Regra de ouro do domínio  
 > **Tag ≠ Funil/Origem**.  
 > - **Tags**: rótulos “muitos-para-muitos” (ex.: `CPB13`, `VIP`, `BlackFriday`).  
-> - **Funil/Origem (Clint)**: “onde o lead está” em um pipeline (card/etapa/status), modelado como **instância** em `lead_funnel_entries`.
+> - **Funil/Origem (Clint)**: pipeline/card/etapa/status, modelado por `lead_funnel_entries`.
 
 ---
 
@@ -16,13 +17,34 @@ Este documento descreve **todas as tabelas** do schema CANONICAL do `tetra-metri
 - **Normalização**:
   - `*_normalized` é sempre `lower(btrim(...))` para comparações e `UNIQUE`.
 - **Idempotência de importação**:
-  - Identidades externas são deduplicadas por **chaves únicas**:
+  - Identidades externas são deduplicadas por **chaves únicas** (quando aplicável):
     - `lead_sources (source_system, source_ref)`
     - `lead_events (source_system, dedupe_key)` quando `dedupe_key` existe
     - `lead_funnel_entries (source_system, external_ref)`
     - `tags (key_normalized)`
     - `tag_aliases (source_system, source_key)`
 - **Colunas `meta`/`payload`**: `jsonb` para armazenar dados extras do fornecedor sem quebrar o schema.
+
+---
+
+## Regras de Deduplicação (Contrato Operacional)
+
+**No estado atual do projeto:**
+- **Email é a única chave de dedupe**.
+- O lead é resolvido por:
+  - `lead_identifiers.type = 'email'`
+  - `lead_identifiers.value_normalized = lower(trim(email))`
+- **Linhas sem e-mail válido devem ser ignoradas** no import (não criar lead “órfão”).
+- Telefone, nome e documento são **enriquecimento** (não entram na lógica de dedupe por enquanto).
+
+### Índice recomendado (consistência)
+Garantir que cada lead tenha no máximo **1 e-mail primário**:
+
+```sql
+create unique index if not exists uq_lead_primary_email
+on public.lead_identifiers (lead_id)
+where type = 'email' and is_primary = true;
+```
 
 ---
 
@@ -82,6 +104,9 @@ Tabelas com trigger:
 **Regra de unicidade**
 - `UNIQUE (type, value_normalized)` → garante que um identificador não pertença a dois leads.
 
+**Observação (contrato atual)**
+- **Email é o único dedupe** no import (vide seção “Regras de Deduplicação”).
+
 **Índices**
 - `idx_lead_identifiers_lead_id (lead_id)`
 - `idx_lead_identifiers_primary (lead_id, is_primary desc)`
@@ -90,14 +115,14 @@ Tabelas com trigger:
 
 ## 3) `lead_sources`
 **Finalidade:** Vincula o lead a registros externos (Clint, ActiveCampaign, planilha, etc.).  
-É aqui que você “amarra” **o ID externo** ao lead canônico.
+No MVP, serve como **rastreio** (observabilidade), não como chave de dedupe.
 
 | Coluna | Tipo | Obrigatório | Observações |
 |---|---:|:---:|---|
 | `id` | uuid | ✅ | PK |
 | `lead_id` | uuid | ✅ | FK → `leads.id` (cascade) |
 | `source_system` | text | ✅ | Ex.: `clint`, `activecampaign`, `spreadsheet` |
-| `source_ref` | text | ✅ | ID/Ref externo do lead |
+| `source_ref` | text | ✅ | ID/Ref externo do registro/origem |
 | `first_seen_at` | timestamptz | ✅ | default `now()` |
 | `last_seen_at` | timestamptz | ✅ | default `now()` |
 | `meta` | jsonb | ✅ | default `{}` |
@@ -180,15 +205,14 @@ Tabelas com trigger:
 |---|---:|:---:|---|
 | `lead_id` | uuid | ✅ | FK → `leads.id` (cascade) |
 | `tag_id` | uuid | ✅ | FK → `tags.id` (cascade) |
-| `source_system` | text | ✅ | Quem aplicou (ex.: `clint`) |
-| `source_ref` | text | ❌ | ref externa opcional (ex.: ID do evento) |
+| `source_system` | text | ✅ | Quem aplicou (ex.: `spreadsheet`) |
+| `source_ref` | text | ❌ | ref externa opcional (ex.: `filehash:linha`) |
 | `first_seen_at` | timestamptz | ✅ | default `now()` |
 | `last_seen_at` | timestamptz | ✅ | default `now()` |
 | `meta` | jsonb | ✅ | default `{}` |
 
 **Chave primária composta**
-- `PRIMARY KEY (lead_id, tag_id, source_system)`  
-Isso permite: o mesmo lead ter a mesma tag vinda de fontes diferentes (se fizer sentido).
+- `PRIMARY KEY (lead_id, tag_id, source_system)`
 
 ---
 
@@ -242,15 +266,10 @@ Isso permite: o mesmo lead ter a mesma tag vinda de fontes diferentes (se fizer 
 **Regra de unicidade**
 - `UNIQUE (funnel_id, key_normalized)`
 
-**Índice**
-- `(funnel_id, position)` para ordenação rápida
-
 ---
 
 ## 11) `lead_funnel_entries`
 **Finalidade:** Representa a **instância** do lead dentro de um funil (o “card”), com etapa atual e status.
-
-> Um lead pode ter **várias entradas** (ex.: vários pipelines / deals), cada uma deduplicada por um identificador externo.
 
 | Coluna | Tipo | Obrigatório | Observações |
 |---|---:|:---:|---|
@@ -266,11 +285,7 @@ Isso permite: o mesmo lead ter a mesma tag vinda de fontes diferentes (se fizer 
 | `meta` | jsonb | ✅ | default `{}` |
 
 **Regra de unicidade**
-- `UNIQUE (source_system, external_ref)`  
-Isso permite importar “card/deal” repetidamente sem duplicar.
-
-**Índices**
-- `lead_id`, `funnel_id`, `current_stage_id`
+- `UNIQUE (source_system, external_ref)`
 
 ---
 
@@ -291,50 +306,51 @@ Isso permite importar “card/deal” repetidamente sem duplicar.
 | `qualification_reasons` | jsonb | ✅ | default `[]` |
 | `updated_at` | timestamptz | ✅ | default `now()` |
 
-**Índices**
-- `qualification_score desc`
-- `last_activity_at desc`
+---
+
+# RPCs do Banco (Contrato de Ingestão)
+
+## `public.ingest_spreadsheet_row(...)`
+**Finalidade:** Ingestão **idempotente** de uma linha de planilha usando **email como única chave**.  
+Garante a tag da campanha (ex.: `CPB13`, derivada do nome do arquivo) e vincula o lead.
+
+### Parâmetros
+- `p_email_raw text` — email bruto (entrada)
+- `p_full_name text` — nome completo (opcional)
+- `p_phone text` — telefone (opcional)
+- `p_source_system text` — ex.: `spreadsheet`
+- `p_source_ref text` — ref idempotente do import (recomendado: `filehash:linha`)
+- `p_tag_key text` — ex.: `CPB13`
+- `p_row jsonb` — linha inteira como JSON (auditoria/enriquecimento)
+
+### Efeitos
+- Resolve ou cria `leads` via `lead_identifiers(email)`.
+- Garante `tags` com `category='campaign'` para `p_tag_key`.
+- Upsert em `lead_tags` (lead ←→ tag).
+- Upsert em `lead_sources` para rastreio (não é dedupe no MVP).
+
+### Retorno
+JSONB:
+- `{"status":"ok","lead_id":"...","tag_id":"..."}`  
+ou
+- `{"status":"ignored","reason":"missing_email"}`
+
+> Segurança: recomenda-se `REVOKE` para `public` e execução via `service_role` no backend.
 
 ---
 
-# Como isso resolve “Tags vs Origem” na prática
+# Checklist de importação (MVP: email-only)
 
-- **Tag (`CPB13`)**:
-  1) garante que existe em `tags` (por `key_normalized`)  
-  2) opcionalmente cria `tag_aliases` (ex.: `activecampaign` usa outro identificador)  
-  3) vincula ao lead via `lead_tags`
+1) **Inferir coluna de email (obrigatório)**  
+- Se não detectar com confiança → abortar import.
 
-- **Origem/Funil (Clint)**:
-  1) garante que existe `funnels` e suas `funnel_stages`  
-  2) mapeia IDs do Clint via `funnel_aliases`  
-  3) cria/atualiza um “card” em `lead_funnel_entries` com `external_ref` do Clint  
-  4) atualiza `current_stage_id` conforme a etapa no Clint
+2) **Para cada linha**
+- Se email inválido → ignorar  
+- Chamar `ingest_spreadsheet_row(...)` com:
+  - `p_tag_key = nome do arquivo (ex.: CPB13)`
+  - `p_source_ref = filehash:rowNumber` (idempotente)
 
----
-
-# Checklist de importação (idempotente)
-
-1) **Resolver lead**
-- encontrar pelo `lead_sources (source_system, source_ref)`; se não existir:
-  - criar `leads`
-  - criar `lead_sources`
-
-2) **Criar tags (se necessário)**
-- `insert into tags` usando `key = <tag>` e `name = <tag>` (ou nome humano)
-- criar `lead_tags` para cada tag do lead
-
-3) **Criar/atualizar funil**
-- garantir `funnels`, `funnel_stages`
-- upsert em `lead_funnel_entries (source_system, external_ref)`
-
-4) **Eventos**
-- inserir em `lead_events` com `dedupe_key` quando existir
-
-5) **Atualizar stats**
-- recalcular e gravar em `lead_stats`
-
----
-
-## Observação sobre RLS / Segurança
-Este schema está focado em estrutura. Políticas de RLS (Row Level Security), multi-tenant e papéis de acesso entram na próxima etapa, pois dependem de como você vai “ancorar” tenant/usuário no `tetra-iam`/`tetra-tenants`.
-
+3) **Resultado**
+- `tags` contém `CPB13`
+- leads com email válido aparecem em `leads`
+- vínculo em `lead_tags`
