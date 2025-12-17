@@ -315,46 +315,69 @@ export class ClintSyncService {
     this.logger.log(`📊 [RESUMO CONTACTS] Processados: ${totalContactsProcessed}, Leads criados/atualizados: ${report.totals.leadsUpserted}, Ignorados (sem email): ${report.totals.contactsIgnoredNoEmail}`);
 
     // 3) DEALS (lead_funnel_entries)
-    this.logger.log('Buscando deals...');
-    const deals = await this.clintApi.deals();
-    this.logger.log(`Processando ${deals.length} deals...`);
+    // Buscar OPEN, WON, LOST para garantir histórico completo
+    this.logger.log('🔵 [DEALS] Buscando deals (OPEN, WON, LOST) por status e página...');
+    const DEAL_STATUSES: Array<'OPEN' | 'WON' | 'LOST'> = ['OPEN', 'WON', 'LOST'];
+    
+    for (const status of DEAL_STATUSES) {
+      this.logger.log(`🔵 [DEALS] Processando status: ${status}`);
+      let currentDealPage = 1;
+      let hasMoreDeals = true;
 
-    // Processamento em chunks para deals também
-    const DEALS_CHUNK_SIZE = 50;
-    const DEALS_BATCH_DELAY_MS = 100;
-    const totalDealsChunks = Math.ceil(deals.length / DEALS_CHUNK_SIZE);
-    this.logger.log(`🔵 [DEALS] Processando em ${totalDealsChunks} chunks de até ${DEALS_CHUNK_SIZE} deals cada`);
+      while (hasMoreDeals) {
+        const pageResult = await this.clintApi.dealsPage({ page: currentDealPage, limit: 200, status });
+        const deals = pageResult.data ?? [];
+        const totalPages = pageResult.totalPages ?? 1;
 
-    for (let chunkStart = 0; chunkStart < deals.length; chunkStart += DEALS_CHUNK_SIZE) {
-      const chunkEnd = Math.min(chunkStart + DEALS_CHUNK_SIZE, deals.length);
-      const chunk = deals.slice(chunkStart, chunkEnd);
-      const chunkNumber = Math.floor(chunkStart / DEALS_CHUNK_SIZE) + 1;
+        this.logger.log(
+          `🔵 [DEALS] Status ${status}, página ${currentDealPage}/${totalPages}: ${deals.length} deals recebidos`,
+        );
 
-      this.logger.log(
-        `🔵 [DEALS] Processando chunk ${chunkNumber}/${totalDealsChunks} (deals ${chunkStart + 1}-${chunkEnd} de ${deals.length})`,
-      );
-
-      const chunkPromises = chunk.map(async (d, chunkIndex) => {
-        const dealNumber = chunkStart + chunkIndex + 1;
-        
-        try {
-          await this.processDeal(d, dealNumber, deals.length, report, dryRun);
-        } catch (error) {
-          this.logger.error(`❌ [DEALS] Erro ao processar deal ${dealNumber}: ${error instanceof Error ? error.message : String(error)}`);
+        if (deals.length === 0) {
+          this.logger.warn(`⚠️ [DEALS] Nenhum deal retornado para status ${status} na página ${currentDealPage}`);
+          break;
         }
-      });
 
-      await Promise.all(chunkPromises);
+        // Processar deals da página atual
+        for (let i = 0; i < deals.length; i++) {
+          try {
+            await this.processDeal(deals[i], i + 1, deals.length, report, dryRun);
+          } catch (error) {
+            this.logger.error(
+              `❌ [DEALS] Erro ao processar deal ${i + 1} (status ${status}, página ${currentDealPage}): ${error instanceof Error ? error.message : String(error)}`,
+            );
+          }
+        }
 
-      const progress = ((chunkEnd / deals.length) * 100).toFixed(1);
-      this.logger.log(
-        `📊 [DEALS] Progresso: ${progress}% (${chunkEnd}/${deals.length} deals, ${report.totals.funnelEntriesUpserted} entries criados/atualizados)`,
-      );
+        const progress = ((currentDealPage / totalPages) * 100).toFixed(1);
+        this.logger.log(
+          `📊 [DEALS] Status ${status}: ${progress}% (página ${currentDealPage}/${totalPages}, ${report.totals.funnelEntriesUpserted} entries total)`,
+        );
 
-      if (chunkEnd < deals.length && !dryRun) {
-        await new Promise((resolve) => setTimeout(resolve, DEALS_BATCH_DELAY_MS));
+        hasMoreDeals = pageResult.hasNext && currentDealPage < totalPages;
+        currentDealPage++;
+
+        // Safety: limite de 1000 páginas
+        if (currentDealPage > 1000) {
+          this.logger.warn(`⚠️ [DEALS] Limite de 1000 páginas atingido para status ${status}`);
+          break;
+        }
+
+        // Delay entre páginas
+        if (hasMoreDeals && !dryRun) {
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        }
       }
+
+      this.logger.log(`✅ [DEALS] Status ${status} concluído`);
     }
+
+    this.logger.log(`✅ [DEALS] Todos os status processados. Total de entries: ${report.totals.funnelEntriesUpserted}`);
+
+    // TODO: Implementar refresh de lead_stats (projeção/cache para métricas)
+    // - Calcular first_contact_at, last_activity_at, distinct_tag_count, event_count, source_count
+    // - Considerar implementar via RPC/job/cron ao invés de no sync
+    // - Referência: INSERT INTO lead_stats ... ON CONFLICT DO UPDATE
 
     return report;
   }
@@ -737,41 +760,187 @@ export class ClintSyncService {
     dryRun: boolean,
   ): Promise<void> {
     const deal = d as {
-      id?: string | number;
+      id?: string;
+      origin_id?: string;
+      originId?: string;
+      stage_id?: string;
+      stageId?: string;
+      status?: 'OPEN' | 'WON' | 'LOST' | string;
+      created_at?: string;
+      updated_stage_at?: string;
+      won_at?: string;
+      lost_at?: string;
       contact?: { email?: string };
-      origin_id?: string | number;
-      originId?: string | number;
-      origin?: { id?: string | number };
-      stage_id?: string | number;
-      stageId?: string | number;
-      stage?: { id?: string | number };
-      current_stage_id?: string | number;
-      currentStageId?: string | number;
-      status?: string;
     };
 
-    const contactEmail = (deal?.contact?.email && String(deal.contact.email).toLowerCase().trim()) || null;
-    const email = contactEmail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactEmail) ? contactEmail : null;
+    const dealId = String(deal?.id ?? '').trim();
+    if (!dealId) return;
 
-    if (!email) return;
+    const emailRaw = String(deal?.contact?.email ?? '').toLowerCase().trim();
+    const email = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailRaw) ? emailRaw : null;
+    if (!email) return; // Email é a única chave de deduplicação
 
     if (dryRun) {
       report.totals.funnelEntriesUpserted++;
       return;
     }
 
-    const lead = await this.supabase
+    // 1) Resolve lead_id por email
+    const leadRes = await this.supabase
       .from('lead_identifiers')
       .select('lead_id')
       .eq('type', 'email')
       .eq('value_normalized', email)
       .maybeSingle();
 
-    const leadId = lead.data?.lead_id;
+    const leadId = leadRes.data?.lead_id ?? null;
     if (!leadId) return;
 
-    // ... resto da lógica de deals (simplificada para não exceder tamanho)
-    // TODO: Implementar lógica completa de deals aqui
+    // 2) Resolve funnel_id por origin_id
+    const originId = String(deal?.origin_id ?? deal?.originId ?? '').trim() || null;
+    let funnelId: string | null = null;
+
+    if (originId) {
+      const alias = await this.supabase
+        .from('funnel_aliases')
+        .select('funnel_id')
+        .eq('source_system', 'clint')
+        .eq('source_key', originId)
+        .maybeSingle();
+      funnelId = alias.data?.funnel_id ?? null;
+    }
+
+    // Fallback funnel (deals sem origin)
+    if (!funnelId) {
+      const fallback = await this.supabase
+        .from('funnels')
+        .select('id')
+        .eq('key_normalized', 'clint-origin-unknown')
+        .maybeSingle();
+      funnelId = fallback.data?.id ?? null;
+    }
+
+    if (!funnelId) return;
+
+    // 3) Resolve current_stage_id via deal.stage_id (mapeado em origin.stages)
+    const stageRef = String(deal?.stage_id ?? deal?.stageId ?? '').trim() || null;
+    let currentStageId: string | null = null;
+
+    if (stageRef) {
+      const stageKey = `clint-stage-${stageRef}`;
+      const stageKeyNorm = stageKey.toLowerCase().trim();
+      const stageRow = await this.supabase
+        .from('funnel_stages')
+        .select('id')
+        .eq('funnel_id', funnelId)
+        .eq('key_normalized', stageKeyNorm)
+        .maybeSingle();
+
+      currentStageId = stageRow.data?.id ?? null;
+
+      // Safety net: se não existir, cria uma placeholder (para não perder deal)
+      if (!currentStageId) {
+        const up = await this.supabase
+          .from('funnel_stages')
+          .upsert(
+            { funnel_id: funnelId, key: stageKey, name: stageKey, position: 999 },
+            { onConflict: 'funnel_id,key_normalized' },
+          )
+          .select('id')
+          .single();
+        currentStageId = up.data?.id ?? null;
+      }
+    }
+
+    // 4) Status
+    const statusRaw = String(deal?.status ?? 'OPEN').toUpperCase();
+    const status = statusRaw === 'WON' ? 'won' : statusRaw === 'LOST' ? 'lost' : 'open';
+
+    // 5) Timestamps
+    const createdAt = deal?.created_at ? new Date(deal.created_at).toISOString() : new Date().toISOString();
+    const updatedStageAt =
+      (deal?.updated_stage_at && new Date(deal.updated_stage_at).toISOString()) ||
+      (deal?.won_at && new Date(deal.won_at).toISOString()) ||
+      (deal?.lost_at && new Date(deal.lost_at).toISOString()) ||
+      new Date().toISOString();
+
+    const externalRef = `deal:${dealId}`;
+
+    // 6) Upsert entry + eventos de mudança
+    const existingEntry = await this.supabase
+      .from('lead_funnel_entries')
+      .select('id, current_stage_id, status')
+      .eq('source_system', 'clint')
+      .eq('external_ref', externalRef)
+      .maybeSingle();
+
+    if (existingEntry.data) {
+      const oldStageId = existingEntry.data.current_stage_id ?? null;
+      const oldStatus = existingEntry.data.status ?? null;
+
+      await this.supabase
+        .from('lead_funnel_entries')
+        .update({
+          lead_id: leadId,
+          funnel_id: funnelId,
+          current_stage_id: currentStageId,
+          status,
+          last_seen_at: updatedStageAt,
+          meta: d ?? {},
+        })
+        .eq('id', existingEntry.data.id);
+
+      // Evento: mudança de stage
+      if (oldStageId !== currentStageId) {
+        await this.supabase.from('lead_events').insert({
+          lead_id: leadId,
+          event_type: 'deal.stage.changed',
+          source_system: 'clint',
+          occurred_at: updatedStageAt,
+          ingested_at: new Date().toISOString(),
+          dedupe_key: `clint:deal:${dealId}:stage:${currentStageId ?? 'null'}`,
+          payload: { deal_id: dealId, funnel_id: funnelId, old_stage_id: oldStageId, new_stage_id: currentStageId },
+        });
+      }
+
+      // Evento: mudança de status
+      if (oldStatus !== status) {
+        await this.supabase.from('lead_events').insert({
+          lead_id: leadId,
+          event_type: 'deal.status.changed',
+          source_system: 'clint',
+          occurred_at: updatedStageAt,
+          ingested_at: new Date().toISOString(),
+          dedupe_key: `clint:deal:${dealId}:status:${status}`,
+          payload: { deal_id: dealId, funnel_id: funnelId, old_status: oldStatus, new_status: status },
+        });
+      }
+    } else {
+      // Novo entry
+      await this.supabase.from('lead_funnel_entries').insert({
+        lead_id: leadId,
+        funnel_id: funnelId,
+        current_stage_id: currentStageId,
+        status,
+        source_system: 'clint',
+        external_ref: externalRef,
+        first_seen_at: createdAt,
+        last_seen_at: updatedStageAt,
+        meta: d ?? {},
+      });
+
+      // Evento: deal criado
+      await this.supabase.from('lead_events').insert({
+        lead_id: leadId,
+        event_type: 'deal.created',
+        source_system: 'clint',
+        occurred_at: createdAt,
+        ingested_at: new Date().toISOString(),
+        dedupe_key: `clint:deal:${dealId}:created`,
+        payload: { deal_id: dealId, funnel_id: funnelId, stage_id: currentStageId, status },
+      });
+    }
+
     report.totals.funnelEntriesUpserted++;
   }
 }

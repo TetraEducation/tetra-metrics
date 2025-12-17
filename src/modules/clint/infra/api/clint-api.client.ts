@@ -127,6 +127,12 @@ export class ClintApiClient {
     return this.listAll('/deals');
   }
 
+  dealsPage(options: { page: number; limit?: number; status?: 'OPEN' | 'WON' | 'LOST' }) {
+    const { page, limit = 200, status } = options;
+    const path = status ? `/deals?status=${status}` : '/deals';
+    return this.getPage(path, page, limit);
+  }
+
   origins() {
     return this.listAll('/origins');
   }
