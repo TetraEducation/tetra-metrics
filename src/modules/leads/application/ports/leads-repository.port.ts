@@ -13,7 +13,10 @@ export interface LeadsRepositoryPort {
   reassignIdentifiers(targetLeadId: string, sourceLeadIds: string[]): Promise<void>;
   deleteLeads(ids: string[]): Promise<void>;
   getLeadById(id: string): Promise<Lead>;
+  findLeadBySearch(params: { name?: string; email?: string; phone?: string }): Promise<string | null>;
+  getLeadDetailById(leadId: string): Promise<unknown>;
 }
+
 
 
 

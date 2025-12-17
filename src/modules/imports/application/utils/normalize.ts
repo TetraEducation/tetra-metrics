@@ -15,3 +15,4 @@ export function fileBaseName(originalName: string): string {
   return originalName.replace(/\.[^/.]+$/, '').trim();
 }
 
+
