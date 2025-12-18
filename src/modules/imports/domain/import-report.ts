@@ -17,6 +17,9 @@ export interface ImportTotals {
   ok: number;
   ignoredInvalidEmail: number;
   errors: number;
+  surveyDetected?: boolean;
+  surveyQuestionsCount?: number;
+  surveyResponsesSaved?: number;
 }
 
 export interface ImportReport {

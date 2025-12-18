@@ -11,6 +11,12 @@ export class ColumnInferenceService implements ColumnInferencePort {
     'mail',
     'correio',
     'correio eletronico',
+    'endereco de email',
+    'endereço de email',
+    'email address',
+    'endereco email',
+    'endereço email',
+    'e mail',
   ];
 
   // Padrões para nome completo - ordem de prioridade
@@ -20,6 +26,14 @@ export class ColumnInferenceService implements ColumnInferencePort {
     'full_name',
     'nome', // Coluna "Nome" pode conter nome completo se "Sobrenome" estiver vazia
     'name',
+    'responsavel',
+    'responsável',
+    'aluno',
+    'student',
+    'participante',
+    'participant',
+    'candidato',
+    'candidate',
   ];
 
   // Colunas que devem ser IGNORADAS (não são nomes de pessoas)
@@ -46,6 +60,13 @@ export class ColumnInferenceService implements ColumnInferencePort {
     'número',
     'num',
     'tel',
+    'mobile',
+    'telefone celular',
+    'phone number',
+    'numero telefone',
+    'número telefone',
+    'telefone whatsapp',
+    'whatsapp number',
   ];
 
   infer(headers: string[], rows: Array<Record<string, unknown>>): InferredColumns {
