@@ -300,6 +300,17 @@ export class FunnelAnalyticsService {
         }
       }
 
+      // Calculate loss rate (lost / total_entries)
+      const lossRate = totalEntries > 0 ? Math.round((lostCount / totalEntries) * 10000) / 100 : 0;
+      
+      // Calculate win rate (won / total_entries)
+      const winRate = totalEntries > 0 ? Math.round((wonCount / totalEntries) * 10000) / 100 : 0;
+      
+      // Convert hours to days for better readability
+      const avgTimeInStageDays = avgTimeInStageHours !== null 
+        ? Math.round((avgTimeInStageHours / 24) * 100) / 100 
+        : null;
+
       return {
         stage_id: stageId,
         stage_name: stageName,
@@ -307,7 +318,10 @@ export class FunnelAnalyticsService {
         current_count: currentCount,
         total_entries: totalEntries,
         avg_time_in_stage_hours: avgTimeInStageHours,
+        avg_time_in_stage_days: avgTimeInStageDays,
         conversion_to_next: conversionToNext,
+        loss_rate: lossRate,
+        win_rate: winRate,
         status_breakdown: {
           open: openCount,
           won: wonCount,

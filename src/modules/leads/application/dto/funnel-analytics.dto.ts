@@ -5,7 +5,10 @@ export interface StageAnalyticsDto {
   current_count: number; // Leads atualmente neste stage
   total_entries: number; // Total de leads que já passaram por este stage
   avg_time_in_stage_hours: number | null; // Tempo médio que leads ficam neste stage
+  avg_time_in_stage_days: number | null; // Tempo médio em dias (para exibição)
   conversion_to_next: number | null; // % de leads que avançam para o próximo stage
+  loss_rate: number; // % de leads perdidos neste stage (lost / total_entries)
+  win_rate: number; // % de leads ganhos neste stage (won / total_entries)
   status_breakdown: {
     open: number;
     won: number;
