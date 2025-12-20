@@ -28,6 +28,13 @@ export interface ClintSyncReport {
     funnelEntriesUpserted: number;
   };
   warnings: string[];
+  errors: Array<{
+    type: string;
+    status?: string;
+    page?: number;
+    error: string;
+    statusCode?: number | null;
+  }>;
 }
 
 @Injectable()
@@ -39,8 +46,16 @@ export class ClintSyncService {
     private readonly clintApi: ClintApiClient
   ) {}
 
-  async run({ dryRun }: { dryRun: boolean }): Promise<ClintSyncReport> {
-    this.logger.log(`Iniciando sincronização do Clint (dryRun=${dryRun})`);
+  async run({ 
+    dryRun, 
+    skipContacts = false, 
+    skipDeals = false 
+  }: { 
+    dryRun: boolean; 
+    skipContacts?: boolean; 
+    skipDeals?: boolean;
+  }): Promise<ClintSyncReport> {
+    this.logger.log(`Iniciando sincronização do Clint (dryRun=${dryRun}, skipContacts=${skipContacts}, skipDeals=${skipDeals})`);
 
     // 1) Catálogos (tags/origins/groups/lost-status)
     this.logger.log(
@@ -67,6 +82,7 @@ export class ClintSyncService {
         funnelEntriesUpserted: 0,
       },
       warnings: [],
+      errors: [],
     };
 
     // TAGS (catálogo)
@@ -246,9 +262,12 @@ export class ClintSyncService {
 
     // 2) CONTACTS (leads + identifiers + sources + lead_tags)
     // Processar página por página para não carregar tudo na memória
-    this.logger.log(
-      "🔵 [CONTACTS] Buscando e processando contatos da API do Clint (página por página)..."
-    );
+    if (skipContacts) {
+      this.logger.log('⏭️  [CONTACTS] Pulando processamento de contatos (--skip-contacts)');
+    } else {
+      this.logger.log(
+        "🔵 [CONTACTS] Buscando e processando contatos da API do Clint (página por página)..."
+      );
 
     const CHUNK_SIZE = 50; // Processar 50 contatos por vez
     const BATCH_DELAY_MS = 100; // Delay entre chunks (ms)
@@ -442,12 +461,16 @@ export class ClintSyncService {
     this.logger.log(
       `📊 [RESUMO CONTACTS] Processados: ${totalContactsProcessed}, Leads criados/atualizados: ${report.totals.leadsUpserted}, Ignorados (sem email): ${report.totals.contactsIgnoredNoEmail}`
     );
+    } // end if skipContacts
 
     // 3) DEALS (lead_funnel_entries)
     // Buscar OPEN, WON, LOST para garantir histórico completo
-    this.logger.log(
-      "🔵 [DEALS] Buscando deals (OPEN, WON, LOST) por status e página..."
-    );
+    if (skipDeals) {
+      this.logger.log('⏭️  [DEALS] Pulando processamento de deals (--skip-deals)');
+    } else {
+      this.logger.log(
+        "🔵 [DEALS] Buscando deals (OPEN, WON, LOST) por status e página..."
+      );
     const DEAL_STATUSES: Array<"OPEN" | "WON" | "LOST"> = [
       "OPEN",
       "WON",
@@ -458,43 +481,83 @@ export class ClintSyncService {
       this.logger.log(`🔵 [DEALS] Processando status: ${status}`);
       let currentDealPage = 1;
       let hasMoreDeals = true;
+      let consecutiveErrors = 0;
+      const MAX_CONSECUTIVE_ERRORS = 3;
 
       while (hasMoreDeals) {
-        const pageResult = await this.clintApi.dealsPage({
-          page: currentDealPage,
-          limit: 200,
-          status,
-        });
-        const deals = pageResult.data ?? [];
-        const totalPages = pageResult.totalPages ?? 1;
+        try {
+          const pageResult = await this.clintApi.dealsPage({
+            page: currentDealPage,
+            limit: 200,
+            status,
+          });
+          const deals = pageResult.data ?? [];
+          const totalPages = pageResult.totalPages ?? 1;
 
-        this.logger.log(
-          `🔵 [DEALS] Status ${status}, página ${currentDealPage}/${totalPages}: ${deals.length} deals recebidos`
-        );
+          // Reset error counter on success
+          consecutiveErrors = 0;
 
-        if (deals.length === 0) {
-          this.logger.warn(
-            `⚠️ [DEALS] Nenhum deal retornado para status ${status} na página ${currentDealPage}`
+          this.logger.log(
+            `🔵 [DEALS] Status ${status}, página ${currentDealPage}/${totalPages}: ${deals.length} deals recebidos`
           );
-          break;
+
+          if (deals.length === 0) {
+            this.logger.warn(
+              `⚠️ [DEALS] Nenhum deal retornado para status ${status} na página ${currentDealPage}`
+            );
+            break;
+          }
+
+          // Processar deals da página em batch para melhor performance
+          await this.processDealsBatch(
+            deals,
+            status,
+            currentDealPage,
+            report,
+            dryRun
+          );
+
+          const progress = ((currentDealPage / totalPages) * 100).toFixed(1);
+          this.logger.log(
+            `📊 [DEALS] Status ${status}: ${progress}% (página ${currentDealPage}/${totalPages}, ${report.totals.funnelEntriesUpserted} entries total)`
+          );
+
+          hasMoreDeals = pageResult.hasNext && currentDealPage < totalPages;
+          currentDealPage++;
+        } catch (error) {
+          consecutiveErrors++;
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          const isAxiosError = error && typeof error === 'object' && 'response' in error;
+          const statusCode = isAxiosError ? (error as any).response?.status : null;
+
+          this.logger.error(
+            `❌ [DEALS] Erro ao buscar deals com status ${status} (página ${currentDealPage}): ${errorMessage} (HTTP ${statusCode || 'N/A'})`
+          );
+
+          if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+            this.logger.error(
+              `❌ [DEALS] Muitos erros consecutivos (${consecutiveErrors}) para status ${status}. Pulando este status...`
+            );
+            report.errors.push({
+              type: 'clint_api_error',
+              status,
+              page: currentDealPage,
+              error: errorMessage,
+              statusCode,
+            });
+            break; // Pula para o próximo status
+          }
+
+          // Exponential backoff: 2s, 4s, 8s
+          const delayMs = Math.pow(2, consecutiveErrors) * 1000;
+          this.logger.warn(
+            `⏳ [DEALS] Aguardando ${delayMs}ms antes de tentar novamente (tentativa ${consecutiveErrors}/${MAX_CONSECUTIVE_ERRORS})...`
+          );
+          await new Promise((resolve) => setTimeout(resolve, delayMs));
+
+          // Não incrementa a página para tentar novamente
+          continue;
         }
-
-        // Processar deals da página em batch para melhor performance
-        await this.processDealsBatch(
-          deals,
-          status,
-          currentDealPage,
-          report,
-          dryRun
-        );
-
-        const progress = ((currentDealPage / totalPages) * 100).toFixed(1);
-        this.logger.log(
-          `📊 [DEALS] Status ${status}: ${progress}% (página ${currentDealPage}/${totalPages}, ${report.totals.funnelEntriesUpserted} entries total)`
-        );
-
-        hasMoreDeals = pageResult.hasNext && currentDealPage < totalPages;
-        currentDealPage++;
 
         // Safety: limite de 1000 páginas
         if (currentDealPage > 1000) {
@@ -516,6 +579,7 @@ export class ClintSyncService {
     this.logger.log(
       `✅ [DEALS] Todos os status processados. Total de entries: ${report.totals.funnelEntriesUpserted}`
     );
+    } // end if skipDeals
 
     // TODO: Implementar refresh de lead_stats (projeção/cache para métricas)
     // - Calcular first_contact_at, last_activity_at, distinct_tag_count, event_count, source_count
