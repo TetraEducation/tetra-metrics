@@ -1072,6 +1072,14 @@ export class ClintSyncService {
     );
   }
 
+  /**
+   * Process a single deal using the SQL function for better performance and idempotency
+   * The SQL function handles:
+   * - Lead resolution/creation
+   * - Funnel and stage resolution/creation
+   * - Lead funnel entry upsert
+   * - Transition tracking (stage/status changes)
+   */
   private async processDeal(
     d: unknown,
     dealNumber: number,
@@ -1079,216 +1087,47 @@ export class ClintSyncService {
     report: ClintSyncReport,
     dryRun: boolean
   ): Promise<void> {
-    const deal = d as {
-      id?: string;
-      origin_id?: string;
-      originId?: string;
-      stage_id?: string;
-      stageId?: string;
-      status?: "OPEN" | "WON" | "LOST" | string;
-      created_at?: string;
-      updated_stage_at?: string;
-      won_at?: string;
-      lost_at?: string;
-      contact?: { email?: string };
-    };
-
-    const dealId = String(deal?.id ?? "").trim();
-    if (!dealId) return;
-
-    const emailRaw = String(deal?.contact?.email ?? "")
-      .toLowerCase()
-      .trim();
-    const email = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailRaw) ? emailRaw : null;
-    if (!email) return; // Email é a única chave de deduplicação
-
     if (dryRun) {
       report.totals.funnelEntriesUpserted++;
       return;
     }
 
-    // 1) Resolve lead_id por email
-    const leadRes = await this.supabase
-      .from("lead_identifiers")
-      .select("lead_id")
-      .eq("type", "email")
-      .eq("value_normalized", email)
-      .maybeSingle();
+    try {
+      // Call the SQL function via RPC
+      const { data, error } = await this.supabase
+        .rpc('ingest_clint_deal', { p_deal: d });
 
-    const leadId = leadRes.data?.lead_id ?? null;
-    if (!leadId) return;
-
-    // 2) Resolve funnel_id por origin_id
-    const originId =
-      String(deal?.origin_id ?? deal?.originId ?? "").trim() || null;
-    let funnelId: string | null = null;
-
-    if (originId) {
-      const alias = await this.supabase
-        .from("funnel_aliases")
-        .select("funnel_id")
-        .eq("source_system", "clint")
-        .eq("source_key", originId)
-        .maybeSingle();
-      funnelId = alias.data?.funnel_id ?? null;
-    }
-
-    // Fallback funnel (deals sem origin)
-    if (!funnelId) {
-      const fallback = await this.supabase
-        .from("funnels")
-        .select("id")
-        .eq("key_normalized", "clint-origin-unknown")
-        .maybeSingle();
-      funnelId = fallback.data?.id ?? null;
-    }
-
-    if (!funnelId) return;
-
-    // 3) Resolve current_stage_id via deal.stage_id (mapeado em origin.stages)
-    const stageRef =
-      String(deal?.stage_id ?? deal?.stageId ?? "").trim() || null;
-    let currentStageId: string | null = null;
-
-    if (stageRef) {
-      const stageKey = `clint-stage-${stageRef}`;
-      const stageKeyNorm = stageKey.toLowerCase().trim();
-      const stageRow = await this.supabase
-        .from("funnel_stages")
-        .select("id")
-        .eq("funnel_id", funnelId)
-        .eq("key_normalized", stageKeyNorm)
-        .maybeSingle();
-
-      currentStageId = stageRow.data?.id ?? null;
-
-      // Safety net: se não existir, cria uma placeholder (para não perder deal)
-      if (!currentStageId) {
-        const up = await this.supabase
-          .from("funnel_stages")
-          .upsert(
-            {
-              funnel_id: funnelId,
-              key: stageKey,
-              name: stageKey,
-              position: 999,
-            },
-            { onConflict: "funnel_id,key_normalized" }
-          )
-          .select("id")
-          .single();
-        currentStageId = up.data?.id ?? null;
-      }
-    }
-
-    // 4) Status
-    const statusRaw = String(deal?.status ?? "OPEN").toUpperCase();
-    const status =
-      statusRaw === "WON" ? "won" : statusRaw === "LOST" ? "lost" : "open";
-
-    // 5) Timestamps
-    const createdAt = deal?.created_at
-      ? new Date(deal.created_at).toISOString()
-      : new Date().toISOString();
-    const updatedStageAt =
-      (deal?.updated_stage_at &&
-        new Date(deal.updated_stage_at).toISOString()) ||
-      (deal?.won_at && new Date(deal.won_at).toISOString()) ||
-      (deal?.lost_at && new Date(deal.lost_at).toISOString()) ||
-      new Date().toISOString();
-
-    const externalRef = `deal:${dealId}`;
-
-    // 6) Upsert entry + eventos de mudança
-    const existingEntry = await this.supabase
-      .from("lead_funnel_entries")
-      .select("id, current_stage_id, status")
-      .eq("source_system", "clint")
-      .eq("external_ref", externalRef)
-      .maybeSingle();
-
-    if (existingEntry.data) {
-      const oldStageId = existingEntry.data.current_stage_id ?? null;
-      const oldStatus = existingEntry.data.status ?? null;
-
-      await this.supabase
-        .from("lead_funnel_entries")
-        .update({
-          lead_id: leadId,
-          funnel_id: funnelId,
-          current_stage_id: currentStageId,
-          status,
-          last_seen_at: updatedStageAt,
-          meta: d ?? {},
-        })
-        .eq("id", existingEntry.data.id);
-
-      // Evento: mudança de stage
-      if (oldStageId !== currentStageId) {
-        await this.supabase.from("lead_events").insert({
-          lead_id: leadId,
-          event_type: "deal.stage.changed",
-          source_system: "clint",
-          occurred_at: updatedStageAt,
-          ingested_at: new Date().toISOString(),
-          dedupe_key: `clint:deal:${dealId}:stage:${currentStageId ?? "null"}`,
-          payload: {
-            deal_id: dealId,
-            funnel_id: funnelId,
-            old_stage_id: oldStageId,
-            new_stage_id: currentStageId,
-          },
-        });
+      if (error) {
+        this.logger.error(
+          `❌ [DEALS] Erro ao processar deal ${dealNumber}: ${error.message}`
+        );
+        return;
       }
 
-      // Evento: mudança de status
-      if (oldStatus !== status) {
-        await this.supabase.from("lead_events").insert({
-          lead_id: leadId,
-          event_type: "deal.status.changed",
-          source_system: "clint",
-          occurred_at: updatedStageAt,
-          ingested_at: new Date().toISOString(),
-          dedupe_key: `clint:deal:${dealId}:status:${status}`,
-          payload: {
-            deal_id: dealId,
-            funnel_id: funnelId,
-            old_status: oldStatus,
-            new_status: status,
-          },
-        });
+      const result = data as { status: string; reason?: string; transition_created?: boolean };
+
+      if (result.status === 'ok') {
+        report.totals.funnelEntriesUpserted++;
+        if (dealNumber <= 5 || result.transition_created) {
+          this.logger.debug(
+            `✅ [DEALS] Deal ${dealNumber} processado${result.transition_created ? ' (transição criada)' : ''}`
+          );
+        }
+      } else if (result.status === 'ignored') {
+        if (dealNumber <= 5) {
+          this.logger.debug(
+            `⚠️ [DEALS] Deal ${dealNumber} ignorado: ${result.reason}`
+          );
+        }
+      } else if (result.status === 'error') {
+        this.logger.error(
+          `❌ [DEALS] Erro ao processar deal ${dealNumber}: ${result.reason}`
+        );
       }
-    } else {
-      // Novo entry
-      await this.supabase.from("lead_funnel_entries").insert({
-        lead_id: leadId,
-        funnel_id: funnelId,
-        current_stage_id: currentStageId,
-        status,
-        source_system: "clint",
-        external_ref: externalRef,
-        first_seen_at: createdAt,
-        last_seen_at: updatedStageAt,
-        meta: d ?? {},
-      });
-
-      // Evento: deal criado
-      await this.supabase.from("lead_events").insert({
-        lead_id: leadId,
-        event_type: "deal.created",
-        source_system: "clint",
-        occurred_at: createdAt,
-        ingested_at: new Date().toISOString(),
-        dedupe_key: `clint:deal:${dealId}:created`,
-        payload: {
-          deal_id: dealId,
-          funnel_id: funnelId,
-          stage_id: currentStageId,
-          status,
-        },
-      });
+    } catch (error) {
+      this.logger.error(
+        `❌ [DEALS] Exceção ao processar deal ${dealNumber}: ${error instanceof Error ? error.message : String(error)}`
+      );
     }
-
-    report.totals.funnelEntriesUpserted++;
   }
 }
