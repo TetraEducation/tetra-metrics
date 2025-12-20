@@ -479,26 +479,14 @@ export class ClintSyncService {
           break;
         }
 
-        // Processar deals da página atual
-        for (let i = 0; i < deals.length; i++) {
-          try {
-            await this.processDeal(
-              deals[i],
-              i + 1,
-              deals.length,
-              report,
-              dryRun
-            );
-          } catch (error) {
-            this.logger.error(
-              `❌ [DEALS] Erro ao processar deal ${
-                i + 1
-              } (status ${status}, página ${currentDealPage}): ${
-                error instanceof Error ? error.message : String(error)
-              }`
-            );
-          }
-        }
+        // Processar deals da página em batch para melhor performance
+        await this.processDealsBatch(
+          deals,
+          status,
+          currentDealPage,
+          report,
+          dryRun
+        );
 
         const progress = ((currentDealPage / totalPages) * 100).toFixed(1);
         this.logger.log(
@@ -1070,6 +1058,73 @@ export class ClintSyncService {
       dryRun,
       contactDataMap
     );
+  }
+
+  /**
+   * Process multiple deals in parallel batches for optimal performance
+   * Processes up to 50 deals concurrently to avoid overwhelming the database
+   */
+  private async processDealsBatch(
+    deals: unknown[],
+    status: string,
+    pageNumber: number,
+    report: ClintSyncReport,
+    dryRun: boolean
+  ): Promise<void> {
+    if (deals.length === 0) return;
+
+    const CONCURRENT_DEALS = 50; // Process 50 deals at a time
+    const chunks: unknown[][] = [];
+
+    // Split deals into chunks
+    for (let i = 0; i < deals.length; i += CONCURRENT_DEALS) {
+      chunks.push(deals.slice(i, i + CONCURRENT_DEALS));
+    }
+
+    this.logger.log(
+      `🔵 [DEALS] Processando ${deals.length} deals em ${chunks.length} batches de até ${CONCURRENT_DEALS}`
+    );
+
+    for (let chunkIdx = 0; chunkIdx < chunks.length; chunkIdx++) {
+      const chunk = chunks[chunkIdx];
+      const chunkNumber = chunkIdx + 1;
+
+      this.logger.debug(
+        `🔵 [DEALS] Batch ${chunkNumber}/${chunks.length} (${chunk.length} deals)`
+      );
+
+      // Process chunk in parallel
+      const results = await Promise.allSettled(
+        chunk.map((deal, idx) =>
+          this.processDeal(
+            deal,
+            chunkIdx * CONCURRENT_DEALS + idx + 1,
+            deals.length,
+            report,
+            dryRun
+          )
+        )
+      );
+
+      // Count successes and failures
+      const succeeded = results.filter((r) => r.status === "fulfilled").length;
+      const failed = results.filter((r) => r.status === "rejected").length;
+
+      if (failed > 0) {
+        this.logger.warn(
+          `⚠️ [DEALS] Batch ${chunkNumber}/${chunks.length}: ${succeeded} ok, ${failed} erros`
+        );
+      } else {
+        this.logger.debug(
+          `✅ [DEALS] Batch ${chunkNumber}/${chunks.length}: ${succeeded} deals processados`
+        );
+      }
+
+      // Small delay between batches to avoid overwhelming the database
+      if (chunkIdx < chunks.length - 1 && !dryRun) {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+    }
   }
 
   /**
