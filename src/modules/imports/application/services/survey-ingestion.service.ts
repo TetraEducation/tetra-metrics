@@ -2,7 +2,10 @@ import { Inject, Injectable, Logger } from "@nestjs/common";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { SUPABASE } from "@/infra/supabase/supabase.provider";
 import type { SurveyInference } from "@/modules/imports/domain/survey-inference";
-import { normalizeText } from "@/modules/imports/application/utils/normalize";
+import {
+  normalizeText,
+  normalizeKey,
+} from "@/modules/imports/application/utils/normalize";
 
 export interface ProcessedRow {
   rowNumber: number;
@@ -130,8 +133,7 @@ export class SurveyIngestionService {
     const questionsToUpsert = surveyInference.questionColumns.map(
       (q, index) => ({
         form_schema_id: formSchemaId!,
-        key: this.normalizeQuestionKey(q.header),
-        // key_normalized: this.normalizeQuestionKey(q.header),
+        key: normalizeKey(q.header),
         label: q.header,
         position: index + 1,
         data_type: "text", // Por padrão, inferimos como texto
@@ -264,9 +266,7 @@ export class SurveyIngestionService {
           continue; // Ignora respostas vazias
         }
 
-        const questionKeyNormalized = this.normalizeQuestionKey(
-          question.header
-        );
+        const questionKeyNormalized = normalizeKey(question.header);
         const questionId = questionsMap.get(questionKeyNormalized);
 
         if (!questionId) {
@@ -379,13 +379,5 @@ export class SurveyIngestionService {
       questionsCount: questionsMap.size,
       responsesSaved: answersSaved, // answersSaved é o número de respostas salvas
     };
-  }
-
-  private normalizeQuestionKey(header: string): string {
-    return header
-      .toLowerCase()
-      .trim()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "");
   }
 }

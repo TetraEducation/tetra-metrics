@@ -229,6 +229,53 @@ export class SupabaseLeadsRepository implements LeadsRepositoryPort {
         : { data: null };
     const stagesMap = new Map((stages ?? []).map((s) => [s.id, s]));
 
+    // Buscar form_submissions (surveys/pesquisas)
+    const { data: formSubmissions } = await this.supabase
+      .from('form_submissions')
+      .select('id, form_schema_id, submitted_at, source_ref, dedupe_key, raw_payload, created_at')
+      .eq('lead_id', leadId)
+      .order('submitted_at', { ascending: false });
+
+    // Buscar form_schemas relacionados
+    const formSchemaIds = [...new Set((formSubmissions ?? []).map((fs) => fs.form_schema_id))];
+    const { data: formSchemas } =
+      formSchemaIds.length > 0
+        ? await this.supabase
+            .from('form_schemas')
+            .select('id, name, source_system, source_ref, created_at')
+            .in('id', formSchemaIds)
+        : { data: null };
+    const formSchemasMap = new Map((formSchemas ?? []).map((fs) => [fs.id, fs]));
+
+    // Buscar form_answers para todas as submissions
+    const submissionIds = (formSubmissions ?? []).map((fs) => fs.id);
+    const { data: formAnswers } =
+      submissionIds.length > 0
+        ? await this.supabase
+            .from('form_answers')
+            .select('id, form_submission_id, question_id, value_text, value_number, value_bool, value_json, created_at')
+            .in('form_submission_id', submissionIds)
+        : { data: null };
+
+    // Buscar form_questions relacionadas
+    const questionIds = [...new Set((formAnswers ?? []).map((fa) => fa.question_id))];
+    const { data: formQuestions } =
+      questionIds.length > 0
+        ? await this.supabase
+            .from('form_questions')
+            .select('id, form_schema_id, key, label, position, data_type')
+            .in('id', questionIds)
+        : { data: null };
+    const formQuestionsMap = new Map((formQuestions ?? []).map((fq) => [fq.id, fq]));
+
+    // Agrupar answers por submission
+    const answersBySubmission = new Map<string, typeof formAnswers>();
+    for (const answer of formAnswers ?? []) {
+      const existing = answersBySubmission.get(answer.form_submission_id) ?? [];
+      existing.push(answer);
+      answersBySubmission.set(answer.form_submission_id, existing);
+    }
+
     // Montar resposta
     return {
       id: lead.id,
@@ -291,6 +338,39 @@ export class SupabaseLeadsRepository implements LeadsRepositoryPort {
           first_seen_at: fe.first_seen_at,
           last_seen_at: fe.last_seen_at,
           meta: fe.meta,
+        };
+      }),
+      surveys: (formSubmissions ?? []).map((fs) => {
+        const schema = formSchemasMap.get(fs.form_schema_id);
+        const answers = answersBySubmission.get(fs.id) ?? [];
+        return {
+          submission_id: fs.id,
+          form_schema_id: fs.form_schema_id,
+          form_name: schema?.name ?? null,
+          form_source_system: schema?.source_system ?? null,
+          submitted_at: fs.submitted_at,
+          source_ref: fs.source_ref,
+          dedupe_key: fs.dedupe_key,
+          created_at: fs.created_at,
+          raw_payload: fs.raw_payload,
+          answers: answers
+            .map((ans) => {
+              const question = formQuestionsMap.get(ans.question_id);
+              return {
+                answer_id: ans.id,
+                question_id: ans.question_id,
+                question_key: question?.key ?? null,
+                question_label: question?.label ?? null,
+                question_position: question?.position ?? null,
+                question_data_type: question?.data_type ?? null,
+                value_text: ans.value_text,
+                value_number: ans.value_number,
+                value_bool: ans.value_bool,
+                value_json: ans.value_json,
+                created_at: ans.created_at,
+              };
+            })
+            .sort((a, b) => (a.question_position ?? 0) - (b.question_position ?? 0)),
         };
       }),
     };
