@@ -4,6 +4,8 @@ import { ImportsController } from '@/modules/imports/interface/http/imports.cont
 import { ImportsService } from '@/modules/imports/application/services/imports.service';
 import { SpreadsheetParserService } from '@/modules/imports/infra/parser/spreadsheet-parser.service';
 import { ColumnInferenceService } from '@/modules/imports/infra/inference/column-inference.service';
+import { SurveyInferenceService } from '@/modules/imports/application/services/survey-inference.service';
+import { SurveyIngestionService } from '@/modules/imports/application/services/survey-ingestion.service';
 import { SPREADSHEET_PARSER } from '@/modules/imports/application/ports/spreadsheet-parser.port';
 import { COLUMN_INFERENCE } from '@/modules/imports/application/ports/column-inference.port';
 
@@ -12,6 +14,8 @@ import { COLUMN_INFERENCE } from '@/modules/imports/application/ports/column-inf
   controllers: [ImportsController],
   providers: [
     ImportsService,
+    SurveyInferenceService,
+    SurveyIngestionService,
     {
       provide: SPREADSHEET_PARSER,
       useClass: SpreadsheetParserService,
@@ -24,4 +28,5 @@ import { COLUMN_INFERENCE } from '@/modules/imports/application/ports/column-inf
   exports: [ImportsService],
 })
 export class ImportsModule {}
+
 
