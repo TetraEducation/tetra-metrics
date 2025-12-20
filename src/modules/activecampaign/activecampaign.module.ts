@@ -9,13 +9,13 @@ import { ActiveCampaignService } from '@/modules/activecampaign/application/serv
     LeadsModule,
     HttpModule.registerAsync({
       useFactory: () => {
-        const token = process.env.ACTIVE_CAMPAING_TOKEN;
-        const baseURL = process.env.ACTIVE_CAMPAING_URI;
+        const token = process.env.ACTIVECAMPAIGN_API_TOKEN;
+        const baseURL = process.env.ACTIVECAMPAIGN_API_BASE_URL;
         if (!token) {
-          throw new Error('ACTIVE_CAMPAING_TOKEN não configurado no .env');
+          throw new Error('ACTIVECAMPAIGN_API_TOKEN não configurado no .env');
         }
         if (!baseURL) {
-          throw new Error('ACTIVE_CAMPAING_URI não configurado no .env');
+          throw new Error('ACTIVECAMPAIGN_API_BASE_URL não configurado no .env');
         }
         return {
           baseURL: `${baseURL}/api/3`,
