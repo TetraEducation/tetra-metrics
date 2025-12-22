@@ -28,6 +28,13 @@ export interface ClintSyncReport {
     funnelEntriesUpserted: number;
   };
   warnings: string[];
+  errors: Array<{
+    type: string;
+    status?: string;
+    page?: number;
+    error: string;
+    statusCode?: number | null;
+  }>;
 }
 
 @Injectable()
@@ -39,8 +46,16 @@ export class ClintSyncService {
     private readonly clintApi: ClintApiClient
   ) {}
 
-  async run({ dryRun }: { dryRun: boolean }): Promise<ClintSyncReport> {
-    this.logger.log(`Iniciando sincronização do Clint (dryRun=${dryRun})`);
+  async run({ 
+    dryRun, 
+    skipContacts = false, 
+    skipDeals = false 
+  }: { 
+    dryRun: boolean; 
+    skipContacts?: boolean; 
+    skipDeals?: boolean;
+  }): Promise<ClintSyncReport> {
+    this.logger.log(`Iniciando sincronização do Clint (dryRun=${dryRun}, skipContacts=${skipContacts}, skipDeals=${skipDeals})`);
 
     // 1) Catálogos (tags/origins/groups/lost-status)
     this.logger.log(
@@ -67,6 +82,7 @@ export class ClintSyncService {
         funnelEntriesUpserted: 0,
       },
       warnings: [],
+      errors: [],
     };
 
     // TAGS (catálogo)
@@ -246,9 +262,12 @@ export class ClintSyncService {
 
     // 2) CONTACTS (leads + identifiers + sources + lead_tags)
     // Processar página por página para não carregar tudo na memória
-    this.logger.log(
-      "🔵 [CONTACTS] Buscando e processando contatos da API do Clint (página por página)..."
-    );
+    if (skipContacts) {
+      this.logger.log('⏭️  [CONTACTS] Pulando processamento de contatos (--skip-contacts)');
+    } else {
+      this.logger.log(
+        "🔵 [CONTACTS] Buscando e processando contatos da API do Clint (página por página)..."
+      );
 
     const CHUNK_SIZE = 50; // Processar 50 contatos por vez
     const BATCH_DELAY_MS = 100; // Delay entre chunks (ms)
@@ -442,12 +461,16 @@ export class ClintSyncService {
     this.logger.log(
       `📊 [RESUMO CONTACTS] Processados: ${totalContactsProcessed}, Leads criados/atualizados: ${report.totals.leadsUpserted}, Ignorados (sem email): ${report.totals.contactsIgnoredNoEmail}`
     );
+    } // end if skipContacts
 
     // 3) DEALS (lead_funnel_entries)
     // Buscar OPEN, WON, LOST para garantir histórico completo
-    this.logger.log(
-      "🔵 [DEALS] Buscando deals (OPEN, WON, LOST) por status e página..."
-    );
+    if (skipDeals) {
+      this.logger.log('⏭️  [DEALS] Pulando processamento de deals (--skip-deals)');
+    } else {
+      this.logger.log(
+        "🔵 [DEALS] Buscando deals (OPEN, WON, LOST) por status e página..."
+      );
     const DEAL_STATUSES: Array<"OPEN" | "WON" | "LOST"> = [
       "OPEN",
       "WON",
@@ -458,55 +481,83 @@ export class ClintSyncService {
       this.logger.log(`🔵 [DEALS] Processando status: ${status}`);
       let currentDealPage = 1;
       let hasMoreDeals = true;
+      let consecutiveErrors = 0;
+      const MAX_CONSECUTIVE_ERRORS = 3;
 
       while (hasMoreDeals) {
-        const pageResult = await this.clintApi.dealsPage({
-          page: currentDealPage,
-          limit: 200,
-          status,
-        });
-        const deals = pageResult.data ?? [];
-        const totalPages = pageResult.totalPages ?? 1;
+        try {
+          const pageResult = await this.clintApi.dealsPage({
+            page: currentDealPage,
+            limit: 200,
+            status,
+          });
+          const deals = pageResult.data ?? [];
+          const totalPages = pageResult.totalPages ?? 1;
 
-        this.logger.log(
-          `🔵 [DEALS] Status ${status}, página ${currentDealPage}/${totalPages}: ${deals.length} deals recebidos`
-        );
+          // Reset error counter on success
+          consecutiveErrors = 0;
 
-        if (deals.length === 0) {
-          this.logger.warn(
-            `⚠️ [DEALS] Nenhum deal retornado para status ${status} na página ${currentDealPage}`
+          this.logger.log(
+            `🔵 [DEALS] Status ${status}, página ${currentDealPage}/${totalPages}: ${deals.length} deals recebidos`
           );
-          break;
-        }
 
-        // Processar deals da página atual
-        for (let i = 0; i < deals.length; i++) {
-          try {
-            await this.processDeal(
-              deals[i],
-              i + 1,
-              deals.length,
-              report,
-              dryRun
+          if (deals.length === 0) {
+            this.logger.warn(
+              `⚠️ [DEALS] Nenhum deal retornado para status ${status} na página ${currentDealPage}`
             );
-          } catch (error) {
-            this.logger.error(
-              `❌ [DEALS] Erro ao processar deal ${
-                i + 1
-              } (status ${status}, página ${currentDealPage}): ${
-                error instanceof Error ? error.message : String(error)
-              }`
-            );
+            break;
           }
+
+          // Processar deals da página em batch para melhor performance
+          await this.processDealsBatch(
+            deals,
+            status,
+            currentDealPage,
+            report,
+            dryRun
+          );
+
+          const progress = ((currentDealPage / totalPages) * 100).toFixed(1);
+          this.logger.log(
+            `📊 [DEALS] Status ${status}: ${progress}% (página ${currentDealPage}/${totalPages}, ${report.totals.funnelEntriesUpserted} entries total)`
+          );
+
+          hasMoreDeals = pageResult.hasNext && currentDealPage < totalPages;
+          currentDealPage++;
+        } catch (error) {
+          consecutiveErrors++;
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          const isAxiosError = error && typeof error === 'object' && 'response' in error;
+          const statusCode = isAxiosError ? (error as any).response?.status : null;
+
+          this.logger.error(
+            `❌ [DEALS] Erro ao buscar deals com status ${status} (página ${currentDealPage}): ${errorMessage} (HTTP ${statusCode || 'N/A'})`
+          );
+
+          if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+            this.logger.error(
+              `❌ [DEALS] Muitos erros consecutivos (${consecutiveErrors}) para status ${status}. Pulando este status...`
+            );
+            report.errors.push({
+              type: 'clint_api_error',
+              status,
+              page: currentDealPage,
+              error: errorMessage,
+              statusCode,
+            });
+            break; // Pula para o próximo status
+          }
+
+          // Exponential backoff: 2s, 4s, 8s
+          const delayMs = Math.pow(2, consecutiveErrors) * 1000;
+          this.logger.warn(
+            `⏳ [DEALS] Aguardando ${delayMs}ms antes de tentar novamente (tentativa ${consecutiveErrors}/${MAX_CONSECUTIVE_ERRORS})...`
+          );
+          await new Promise((resolve) => setTimeout(resolve, delayMs));
+
+          // Não incrementa a página para tentar novamente
+          continue;
         }
-
-        const progress = ((currentDealPage / totalPages) * 100).toFixed(1);
-        this.logger.log(
-          `📊 [DEALS] Status ${status}: ${progress}% (página ${currentDealPage}/${totalPages}, ${report.totals.funnelEntriesUpserted} entries total)`
-        );
-
-        hasMoreDeals = pageResult.hasNext && currentDealPage < totalPages;
-        currentDealPage++;
 
         // Safety: limite de 1000 páginas
         if (currentDealPage > 1000) {
@@ -528,6 +579,7 @@ export class ClintSyncService {
     this.logger.log(
       `✅ [DEALS] Todos os status processados. Total de entries: ${report.totals.funnelEntriesUpserted}`
     );
+    } // end if skipDeals
 
     // TODO: Implementar refresh de lead_stats (projeção/cache para métricas)
     // - Calcular first_contact_at, last_activity_at, distinct_tag_count, event_count, source_count
@@ -1072,6 +1124,81 @@ export class ClintSyncService {
     );
   }
 
+  /**
+   * Process multiple deals in parallel batches for optimal performance
+   * Processes up to 50 deals concurrently to avoid overwhelming the database
+   */
+  private async processDealsBatch(
+    deals: unknown[],
+    status: string,
+    pageNumber: number,
+    report: ClintSyncReport,
+    dryRun: boolean
+  ): Promise<void> {
+    if (deals.length === 0) return;
+
+    const CONCURRENT_DEALS = 50; // Process 50 deals at a time
+    const chunks: unknown[][] = [];
+
+    // Split deals into chunks
+    for (let i = 0; i < deals.length; i += CONCURRENT_DEALS) {
+      chunks.push(deals.slice(i, i + CONCURRENT_DEALS));
+    }
+
+    this.logger.log(
+      `🔵 [DEALS] Processando ${deals.length} deals em ${chunks.length} batches de até ${CONCURRENT_DEALS}`
+    );
+
+    for (let chunkIdx = 0; chunkIdx < chunks.length; chunkIdx++) {
+      const chunk = chunks[chunkIdx];
+      const chunkNumber = chunkIdx + 1;
+
+      this.logger.debug(
+        `🔵 [DEALS] Batch ${chunkNumber}/${chunks.length} (${chunk.length} deals)`
+      );
+
+      // Process chunk in parallel
+      const results = await Promise.allSettled(
+        chunk.map((deal, idx) =>
+          this.processDeal(
+            deal,
+            chunkIdx * CONCURRENT_DEALS + idx + 1,
+            deals.length,
+            report,
+            dryRun
+          )
+        )
+      );
+
+      // Count successes and failures
+      const succeeded = results.filter((r) => r.status === "fulfilled").length;
+      const failed = results.filter((r) => r.status === "rejected").length;
+
+      if (failed > 0) {
+        this.logger.warn(
+          `⚠️ [DEALS] Batch ${chunkNumber}/${chunks.length}: ${succeeded} ok, ${failed} erros`
+        );
+      } else {
+        this.logger.debug(
+          `✅ [DEALS] Batch ${chunkNumber}/${chunks.length}: ${succeeded} deals processados`
+        );
+      }
+
+      // Small delay between batches to avoid overwhelming the database
+      if (chunkIdx < chunks.length - 1 && !dryRun) {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+    }
+  }
+
+  /**
+   * Process a single deal using the SQL function for better performance and idempotency
+   * The SQL function handles:
+   * - Lead resolution/creation
+   * - Funnel and stage resolution/creation
+   * - Lead funnel entry upsert
+   * - Transition tracking (stage/status changes)
+   */
   private async processDeal(
     d: unknown,
     dealNumber: number,
@@ -1079,216 +1206,47 @@ export class ClintSyncService {
     report: ClintSyncReport,
     dryRun: boolean
   ): Promise<void> {
-    const deal = d as {
-      id?: string;
-      origin_id?: string;
-      originId?: string;
-      stage_id?: string;
-      stageId?: string;
-      status?: "OPEN" | "WON" | "LOST" | string;
-      created_at?: string;
-      updated_stage_at?: string;
-      won_at?: string;
-      lost_at?: string;
-      contact?: { email?: string };
-    };
-
-    const dealId = String(deal?.id ?? "").trim();
-    if (!dealId) return;
-
-    const emailRaw = String(deal?.contact?.email ?? "")
-      .toLowerCase()
-      .trim();
-    const email = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailRaw) ? emailRaw : null;
-    if (!email) return; // Email é a única chave de deduplicação
-
     if (dryRun) {
       report.totals.funnelEntriesUpserted++;
       return;
     }
 
-    // 1) Resolve lead_id por email
-    const leadRes = await this.supabase
-      .from("lead_identifiers")
-      .select("lead_id")
-      .eq("type", "email")
-      .eq("value_normalized", email)
-      .maybeSingle();
+    try {
+      // Call the SQL function via RPC
+      const { data, error } = await this.supabase
+        .rpc('ingest_clint_deal', { p_deal: d });
 
-    const leadId = leadRes.data?.lead_id ?? null;
-    if (!leadId) return;
-
-    // 2) Resolve funnel_id por origin_id
-    const originId =
-      String(deal?.origin_id ?? deal?.originId ?? "").trim() || null;
-    let funnelId: string | null = null;
-
-    if (originId) {
-      const alias = await this.supabase
-        .from("funnel_aliases")
-        .select("funnel_id")
-        .eq("source_system", "clint")
-        .eq("source_key", originId)
-        .maybeSingle();
-      funnelId = alias.data?.funnel_id ?? null;
-    }
-
-    // Fallback funnel (deals sem origin)
-    if (!funnelId) {
-      const fallback = await this.supabase
-        .from("funnels")
-        .select("id")
-        .eq("key_normalized", "clint-origin-unknown")
-        .maybeSingle();
-      funnelId = fallback.data?.id ?? null;
-    }
-
-    if (!funnelId) return;
-
-    // 3) Resolve current_stage_id via deal.stage_id (mapeado em origin.stages)
-    const stageRef =
-      String(deal?.stage_id ?? deal?.stageId ?? "").trim() || null;
-    let currentStageId: string | null = null;
-
-    if (stageRef) {
-      const stageKey = `clint-stage-${stageRef}`;
-      const stageKeyNorm = stageKey.toLowerCase().trim();
-      const stageRow = await this.supabase
-        .from("funnel_stages")
-        .select("id")
-        .eq("funnel_id", funnelId)
-        .eq("key_normalized", stageKeyNorm)
-        .maybeSingle();
-
-      currentStageId = stageRow.data?.id ?? null;
-
-      // Safety net: se não existir, cria uma placeholder (para não perder deal)
-      if (!currentStageId) {
-        const up = await this.supabase
-          .from("funnel_stages")
-          .upsert(
-            {
-              funnel_id: funnelId,
-              key: stageKey,
-              name: stageKey,
-              position: 999,
-            },
-            { onConflict: "funnel_id,key_normalized" }
-          )
-          .select("id")
-          .single();
-        currentStageId = up.data?.id ?? null;
-      }
-    }
-
-    // 4) Status
-    const statusRaw = String(deal?.status ?? "OPEN").toUpperCase();
-    const status =
-      statusRaw === "WON" ? "won" : statusRaw === "LOST" ? "lost" : "open";
-
-    // 5) Timestamps
-    const createdAt = deal?.created_at
-      ? new Date(deal.created_at).toISOString()
-      : new Date().toISOString();
-    const updatedStageAt =
-      (deal?.updated_stage_at &&
-        new Date(deal.updated_stage_at).toISOString()) ||
-      (deal?.won_at && new Date(deal.won_at).toISOString()) ||
-      (deal?.lost_at && new Date(deal.lost_at).toISOString()) ||
-      new Date().toISOString();
-
-    const externalRef = `deal:${dealId}`;
-
-    // 6) Upsert entry + eventos de mudança
-    const existingEntry = await this.supabase
-      .from("lead_funnel_entries")
-      .select("id, current_stage_id, status")
-      .eq("source_system", "clint")
-      .eq("external_ref", externalRef)
-      .maybeSingle();
-
-    if (existingEntry.data) {
-      const oldStageId = existingEntry.data.current_stage_id ?? null;
-      const oldStatus = existingEntry.data.status ?? null;
-
-      await this.supabase
-        .from("lead_funnel_entries")
-        .update({
-          lead_id: leadId,
-          funnel_id: funnelId,
-          current_stage_id: currentStageId,
-          status,
-          last_seen_at: updatedStageAt,
-          meta: d ?? {},
-        })
-        .eq("id", existingEntry.data.id);
-
-      // Evento: mudança de stage
-      if (oldStageId !== currentStageId) {
-        await this.supabase.from("lead_events").insert({
-          lead_id: leadId,
-          event_type: "deal.stage.changed",
-          source_system: "clint",
-          occurred_at: updatedStageAt,
-          ingested_at: new Date().toISOString(),
-          dedupe_key: `clint:deal:${dealId}:stage:${currentStageId ?? "null"}`,
-          payload: {
-            deal_id: dealId,
-            funnel_id: funnelId,
-            old_stage_id: oldStageId,
-            new_stage_id: currentStageId,
-          },
-        });
+      if (error) {
+        this.logger.error(
+          `❌ [DEALS] Erro ao processar deal ${dealNumber}: ${error.message}`
+        );
+        return;
       }
 
-      // Evento: mudança de status
-      if (oldStatus !== status) {
-        await this.supabase.from("lead_events").insert({
-          lead_id: leadId,
-          event_type: "deal.status.changed",
-          source_system: "clint",
-          occurred_at: updatedStageAt,
-          ingested_at: new Date().toISOString(),
-          dedupe_key: `clint:deal:${dealId}:status:${status}`,
-          payload: {
-            deal_id: dealId,
-            funnel_id: funnelId,
-            old_status: oldStatus,
-            new_status: status,
-          },
-        });
+      const result = data as { status: string; reason?: string; transition_created?: boolean };
+
+      if (result.status === 'ok') {
+        report.totals.funnelEntriesUpserted++;
+        if (dealNumber <= 5 || result.transition_created) {
+          this.logger.debug(
+            `✅ [DEALS] Deal ${dealNumber} processado${result.transition_created ? ' (transição criada)' : ''}`
+          );
+        }
+      } else if (result.status === 'ignored') {
+        if (dealNumber <= 5) {
+          this.logger.debug(
+            `⚠️ [DEALS] Deal ${dealNumber} ignorado: ${result.reason}`
+          );
+        }
+      } else if (result.status === 'error') {
+        this.logger.error(
+          `❌ [DEALS] Erro ao processar deal ${dealNumber}: ${result.reason}`
+        );
       }
-    } else {
-      // Novo entry
-      await this.supabase.from("lead_funnel_entries").insert({
-        lead_id: leadId,
-        funnel_id: funnelId,
-        current_stage_id: currentStageId,
-        status,
-        source_system: "clint",
-        external_ref: externalRef,
-        first_seen_at: createdAt,
-        last_seen_at: updatedStageAt,
-        meta: d ?? {},
-      });
-
-      // Evento: deal criado
-      await this.supabase.from("lead_events").insert({
-        lead_id: leadId,
-        event_type: "deal.created",
-        source_system: "clint",
-        occurred_at: createdAt,
-        ingested_at: new Date().toISOString(),
-        dedupe_key: `clint:deal:${dealId}:created`,
-        payload: {
-          deal_id: dealId,
-          funnel_id: funnelId,
-          stage_id: currentStageId,
-          status,
-        },
-      });
+    } catch (error) {
+      this.logger.error(
+        `❌ [DEALS] Exceção ao processar deal ${dealNumber}: ${error instanceof Error ? error.message : String(error)}`
+      );
     }
-
-    report.totals.funnelEntriesUpserted++;
   }
 }

@@ -26,3 +26,4 @@ export function normalizeKey(input: string): string {
     .replace(/(^-|-$)+/g, "") // remove hífens nas pontas
     .replace(/-+/g, "-"); // colapsa múltiplos hífens em um só
 }
+
