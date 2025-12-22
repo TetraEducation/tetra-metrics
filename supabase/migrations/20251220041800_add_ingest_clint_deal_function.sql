@@ -260,3 +260,4 @@ $$;
 -- Grant execute permission
 GRANT EXECUTE ON FUNCTION public.ingest_clint_deal(jsonb) TO authenticated, anon, service_role;
 
+

@@ -114,3 +114,4 @@ Se a API do Clint retornar erro 500 para um status (ex: WON), o sistema vai:
 
 **Dica:** Use `clint:sync:deals` após a primeira sincronização para economizar tempo!
 
+
