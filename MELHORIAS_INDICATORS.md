@@ -24,18 +24,21 @@
 - ⚠️ **Carregamento inicial lento**: Melhorado com estrutura modular, mas ainda aguarda endpoints otimizados
 
 #### Backend (API atual)
-- ❌ **Endpoint único**: `/leads/funnels/analytics` retorna tudo de uma vez
-- ❌ **Sem agregações pré-calculadas**: Frontend precisa calcular tudo
-- ❌ **Sem cache**: Métricas recalculadas a cada request
-- ❌ **Sem endpoints específicos**: Não há endpoints para necessidades específicas
+- ✅ **Endpoint único**: `/leads/funnels/analytics` ainda existe (mantido para compatibilidade)
+- ✅ **Novos endpoints especializados**: Implementados em `/api/analytics/*`
+- ✅ **Agregações pré-calculadas**: Health score, alertas e bottlenecks calculados no backend
+- ⚠️ **Cache**: Ainda não implementado (planejado para Fase 3)
+- ✅ **Endpoints específicos**: Dashboard overview, sources list/details, funnel details implementados
 
 ---
 
 ## 🔧 Melhorias Backend
 
-### 1. Endpoint: Dashboard Overview (Carregamento Inicial Rápido)
+### 1. Endpoint: Dashboard Overview (Carregamento Inicial Rápido) ✅ **IMPLEMENTADO**
 
 **Rota:** `GET /api/analytics/dashboard/overview`
+
+**Status:** ✅ Implementado em `src/modules/metrics/interface/http/analytics.controller.ts`
 
 **Descrição:** Retorna apenas métricas agregadas para o dashboard principal. Deve ser o endpoint mais rápido.
 
@@ -74,9 +77,11 @@ interface DashboardOverviewResponse {
 
 ---
 
-### 2. Endpoint: Lista de Origens (Sem Detalhes)
+### 2. Endpoint: Lista de Origens (Sem Detalhes) ✅ **IMPLEMENTADO**
 
 **Rota:** `GET /api/analytics/sources`
+
+**Status:** ✅ Implementado em `src/modules/metrics/interface/http/analytics.controller.ts`
 
 **Descrição:** Retorna apenas resumo por origem, sem funis e estágios. Usado para renderizar a lista inicial.
 
@@ -109,9 +114,11 @@ interface SourcesListResponse {
 
 ---
 
-### 3. Endpoint: Detalhes de uma Origem (Lazy Loading)
+### 3. Endpoint: Detalhes de uma Origem (Lazy Loading) ✅ **IMPLEMENTADO**
 
 **Rota:** `GET /api/analytics/sources/:sourceSystem`
+
+**Status:** ✅ Implementado em `src/modules/metrics/interface/http/analytics.controller.ts`
 
 **Query Params:**
 - `includeStages?: boolean` - Se `false`, retorna apenas funis sem estágios (padrão: `false`)
@@ -175,9 +182,11 @@ interface SourceDetailsResponse {
 
 ---
 
-### 4. Endpoint: Detalhes de um Funil (Lazy Loading)
+### 4. Endpoint: Detalhes de um Funil (Lazy Loading) ✅ **IMPLEMENTADO**
 
 **Rota:** `GET /api/analytics/funnels/:funnelId`
+
+**Status:** ✅ Implementado em `src/modules/metrics/interface/http/analytics.controller.ts`
 
 **Descrição:** Retorna um funil específico com todos os estágios. Só é chamado quando o usuário expande um funil.
 
@@ -220,9 +229,11 @@ interface FunnelDetailsResponse {
 
 ---
 
-### 5. Endpoint: Métricas Pré-calculadas (Cache)
+### 5. Endpoint: Métricas Pré-calculadas (Cache) ⏳ **PLANEJADO PARA FASE 3**
 
 **Rota:** `GET /api/analytics/metrics/cached`
+
+**Status:** ⏳ Não implementado (planejado para Fase 3 - Polimento)
 
 **Descrição:** Retorna métricas pré-calculadas e cacheadas. Útil para dashboards que precisam de dados atualizados mas não em tempo real.
 
@@ -255,9 +266,12 @@ interface CachedMetricsResponse {
 
 ---
 
-### 6. Regras de Negócio no Backend
+### 6. Regras de Negócio no Backend ✅ **IMPLEMENTADAS**
 
-#### Health Score Calculation
+**Status:** ✅ Todas as regras de negócio foram implementadas no backend
+
+#### Health Score Calculation ✅ **IMPLEMENTADO**
+**Arquivo:** `src/modules/metrics/application/services/health-score.service.ts`
 ```typescript
 function calculateHealthScore(
   conversionRate: number,
@@ -279,7 +293,8 @@ function calculateHealthScore(
 }
 ```
 
-#### Alert Generation
+#### Alert Generation ✅ **IMPLEMENTADO**
+**Arquivo:** `src/modules/metrics/application/services/alerts.service.ts`
 ```typescript
 function generateAlerts(source: SourceMetrics): Alert[] {
   const alerts: Alert[] = [];
@@ -319,7 +334,8 @@ function generateAlerts(source: SourceMetrics): Alert[] {
 }
 ```
 
-#### Bottleneck Detection
+#### Bottleneck Detection ✅ **IMPLEMENTADO**
+**Arquivo:** `src/modules/metrics/application/services/bottlenecks.service.ts`
 ```typescript
 function detectBottlenecks(stages: Stage[]): Bottleneck[] {
   return stages
@@ -376,11 +392,11 @@ src/routes/indicators-new.tsx     # ✅ Apenas definição de rota (~10 linhas)
 ### 2. Hooks Customizados ⚠️ **PARCIALMENTE IMPLEMENTADO**
 
 **Status Atual:**
-- ✅ `useIndicatorsMetrics.ts` - Implementado (processa dados do endpoint atual)
-- ⏳ `useDashboardOverview.ts` - Aguardando endpoint `/api/analytics/dashboard/overview`
-- ⏳ `useSources.ts` - Aguardando endpoint `/api/analytics/sources`
-- ⏳ `useSourceDetails.ts` - Aguardando endpoint `/api/analytics/sources/:sourceSystem`
-- ⏳ `useFunnelDetails.ts` - Aguardando endpoint `/api/analytics/funnels/:funnelId`
+- ✅ `useIndicatorsMetrics.ts` - Implementado (processa dados do endpoint atual - **DEPRECATED**, migrar para novos hooks)
+- ✅ Endpoints prontos! ⏳ `useDashboardOverview.ts` - Endpoint `/api/analytics/dashboard/overview` ✅ disponível (ver `GUIA_FRONTEND_ANALYTICS.md`)
+- ✅ Endpoints prontos! ⏳ `useSources.ts` - Endpoint `/api/analytics/sources` ✅ disponível (ver `GUIA_FRONTEND_ANALYTICS.md`)
+- ✅ Endpoints prontos! ⏳ `useSourceDetails.ts` - Endpoint `/api/analytics/sources/:sourceSystem` ✅ disponível (ver `GUIA_FRONTEND_ANALYTICS.md`)
+- ✅ Endpoints prontos! ⏳ `useFunnelDetails.ts` - Endpoint `/api/analytics/funnels/:funnelId` ✅ disponível (ver `GUIA_FRONTEND_ANALYTICS.md`)
 
 **Implementado:**
 ```typescript
@@ -483,17 +499,19 @@ export function useFunnelDetails(funnelId: string | null) {
 
 ---
 
-### 4. API Client Functions ⏳ **PENDENTE**
+### 4. API Client Functions ⏳ **AGUARDANDO IMPLEMENTAÇÃO NO FRONTEND**
 
-**Status:** As funções de API ainda não foram criadas, pois aguardam os endpoints do backend.
+**Status:** ✅ Endpoints do backend estão prontos! Veja `GUIA_FRONTEND_ANALYTICS.md` para implementação completa.
 
-**Funções a serem implementadas quando endpoints estiverem prontos:**
-- ⏳ `fetchDashboardOverview()` - Aguardando `/api/analytics/dashboard/overview`
-- ⏳ `fetchSources()` - Aguardando `/api/analytics/sources`
-- ⏳ `fetchSourceDetails()` - Aguardando `/api/analytics/sources/:sourceSystem`
-- ⏳ `fetchFunnelDetails()` - Aguardando `/api/analytics/funnels/:funnelId`
+**Funções a serem implementadas (endpoints já disponíveis):**
+- ⏳ `fetchDashboardOverview()` - ✅ Endpoint `/api/analytics/dashboard/overview` disponível
+- ⏳ `fetchSources()` - ✅ Endpoint `/api/analytics/sources` disponível
+- ⏳ `fetchSourceDetails()` - ✅ Endpoint `/api/analytics/sources/:sourceSystem` disponível
+- ⏳ `fetchFunnelDetails()` - ✅ Endpoint `/api/analytics/funnels/:funnelId` disponível
 
-**Atualmente:** O código usa `fetchFunnelsAnalytics()` do endpoint antigo `/leads/funnels/analytics`
+**Documentação:** Veja `GUIA_FRONTEND_ANALYTICS.md` para exemplos completos de implementação.
+
+**Atualmente:** O código ainda usa `fetchFunnelsAnalytics()` do endpoint antigo `/leads/funnels/analytics` - precisa migrar para os novos endpoints
 
 ---
 
@@ -715,14 +733,29 @@ interface Bottleneck {
 
 ## 📅 Plano de Implementação
 
-### Fase 1: Quick Wins (1-2 semanas) ⚠️ **PARCIALMENTE CONCLUÍDA**
+### Fase 1: Quick Wins (1-2 semanas) ✅ **CONCLUÍDA**
 
-#### Backend
-- [ ] Criar endpoint `/api/analytics/dashboard/overview`
-- [ ] Criar endpoint `/api/analytics/sources`
-- [ ] Implementar cálculo de health score no backend
-- [ ] Implementar geração de alertas no backend
-- [ ] Implementar detecção de bottlenecks no backend
+#### Backend ✅ **IMPLEMENTADO**
+- [x] Criar endpoint `/api/analytics/dashboard/overview` ✅
+- [x] Criar endpoint `/api/analytics/sources` ✅
+- [x] Criar endpoint `/api/analytics/sources/:sourceSystem` ✅
+- [x] Criar endpoint `/api/analytics/funnels/:funnelId` ✅
+- [x] Implementar cálculo de health score no backend ✅
+- [x] Implementar geração de alertas no backend ✅
+- [x] Implementar detecção de bottlenecks no backend ✅
+
+**Arquivos criados:**
+- `src/modules/metrics/interface/http/analytics.controller.ts` - Controller com todos os endpoints
+- `src/modules/metrics/application/dto/analytics.dto.ts` - DTOs para os endpoints
+- `src/modules/metrics/application/services/dashboard-analytics.service.ts` - Serviço de dashboard
+- `src/modules/metrics/application/services/sources-analytics.service.ts` - Serviço de sources
+- `src/modules/metrics/application/services/funnel-details.service.ts` - Serviço de funnel details
+- `src/modules/metrics/application/services/health-score.service.ts` - Cálculo de health score
+- `src/modules/metrics/application/services/alerts.service.ts` - Geração de alertas
+- `src/modules/metrics/application/services/bottlenecks.service.ts` - Detecção de bottlenecks
+
+**Documentação:**
+- `GUIA_FRONTEND_ANALYTICS.md` - Guia completo para integração frontend
 
 #### Frontend ✅ **CONCLUÍDO**
 - [x] Criar estrutura de pastas modular
@@ -746,11 +779,11 @@ interface Bottleneck {
 
 ### Fase 2: Otimização (2-3 semanas) ⚠️ **PARCIALMENTE CONCLUÍDA**
 
-#### Backend
-- [ ] Criar endpoint `/api/analytics/sources/:sourceSystem`
-- [ ] Criar endpoint `/api/analytics/funnels/:funnelId`
-- [ ] Implementar cache básico (Redis ou in-memory)
-- [ ] Adicionar query params para controle de dados retornados
+#### Backend ⚠️ **PARCIALMENTE IMPLEMENTADO**
+- [x] Criar endpoint `/api/analytics/sources/:sourceSystem` ✅
+- [x] Criar endpoint `/api/analytics/funnels/:funnelId` ✅
+- [x] Adicionar query params para controle de dados retornados ✅ (`includeStages` em source details)
+- [ ] Implementar cache básico (Redis ou in-memory) ⏳ (Planejado para Fase 3)
 
 #### Frontend ✅ **ESTRUTURA PRONTA, AGUARDANDO BACKEND**
 - [x] Criar componente `SourceCard` (colapsável) ✅
@@ -855,45 +888,66 @@ interface Bottleneck {
    - ✅ Geração de alertas (temporariamente no cliente)
    - ✅ Health score (temporariamente no cliente)
 
-### ⏳ Pendente (Aguardando Backend)
+### ✅ Concluído (Backend)
 
-1. **Endpoints Especializados**
-   - ⏳ `/api/analytics/dashboard/overview`
-   - ⏳ `/api/analytics/sources`
-   - ⏳ `/api/analytics/sources/:sourceSystem`
-   - ⏳ `/api/analytics/funnels/:funnelId`
+1. **Endpoints Especializados** ✅
+   - [x] `/api/analytics/dashboard/overview` ✅ Implementado
+   - [x] `/api/analytics/sources` ✅ Implementado
+   - [x] `/api/analytics/sources/:sourceSystem` ✅ Implementado (com query param `includeStages`)
+   - [x] `/api/analytics/funnels/:funnelId` ✅ Implementado
 
-2. **Otimizações de Performance**
-   - ⏳ Lazy loading de dados
-   - ⏳ Cache no backend
-   - ⏳ Cálculos movidos para backend
-   - ⏳ Carregamento progressivo
+2. **Regras de Negócio no Backend** ✅
+   - [x] Health score calculado no backend ✅
+   - [x] Alertas pré-calculados no backend ✅
+   - [x] Detecção de bottlenecks no backend ✅
+   - [x] Métricas agregadas calculadas no backend ✅
 
-3. **Hooks de Lazy Loading**
-   - ⏳ `useDashboardOverview` (quando endpoint estiver pronto)
-   - ⏳ `useSources` (quando endpoint estiver pronto)
-   - ⏳ `useSourceDetails` (quando endpoint estiver pronto)
-   - ⏳ `useFunnelDetails` (quando endpoint estiver pronto)
+3. **Documentação** ✅
+   - [x] `GUIA_FRONTEND_ANALYTICS.md` ✅ Criado com exemplos completos
+
+### ⏳ Pendente (Frontend - Aguardando Integração)
+
+1. **Otimizações de Performance**
+   - ✅ Lazy loading de dados (endpoints prontos)
+   - ⏳ Cache no backend (planejado para Fase 3)
+   - ✅ Cálculos movidos para backend
+   - ✅ Carregamento progressivo (endpoints prontos)
+
+2. **Hooks de Lazy Loading** ⏳ **AGUARDANDO IMPLEMENTAÇÃO NO FRONTEND**
+   - ⏳ `useDashboardOverview` (endpoint pronto, aguardando implementação)
+   - ⏳ `useSources` (endpoint pronto, aguardando implementação)
+   - ⏳ `useSourceDetails` (endpoint pronto, aguardando implementação)
+   - ⏳ `useFunnelDetails` (endpoint pronto, aguardando implementação)
+
+3. **Funções de API Client** ⏳ **AGUARDANDO IMPLEMENTAÇÃO NO FRONTEND**
+   - ⏳ `fetchDashboardOverview()` (ver guia)
+   - ⏳ `fetchSources()` (ver guia)
+   - ⏳ `fetchSourceDetails()` (ver guia)
+   - ⏳ `fetchFunnelDetails()` (ver guia)
 
 ### 📈 Próximos Passos
 
-1. **Backend (Prioridade Alta)**
-   - Implementar endpoints especializados
-   - Mover cálculos de métricas para backend
-   - Implementar cache básico
-   - Calcular health score no backend
-   - Gerar alertas no backend
+1. **Backend (Prioridade Média)** ⚠️ **FASE 3**
+   - ⏳ Implementar cache básico (Redis ou in-memory)
+   - ⏳ Otimizar queries do banco de dados
+   - ⏳ Adicionar índices necessários
+   - ⏳ Implementar refresh automático de cache
 
-2. **Frontend (Após Backend)**
-   - Criar hooks para novos endpoints
-   - Integrar lazy loading nos componentes
-   - Remover processamento pesado do cliente
-   - Adicionar error boundaries
-   - Implementar skeleton loaders
+2. **Frontend (Prioridade Alta)** ⏳ **AGUARDANDO IMPLEMENTAÇÃO**
+   - ⏳ Implementar funções de API client (ver `GUIA_FRONTEND_ANALYTICS.md`)
+   - ⏳ Criar hooks para novos endpoints (ver `GUIA_FRONTEND_ANALYTICS.md`)
+   - ⏳ Integrar lazy loading nos componentes
+   - ⏳ Remover processamento pesado do cliente (mover para usar novos endpoints)
+   - ⏳ Adicionar error boundaries
+   - ⏳ Implementar skeleton loaders
+   - ⏳ Atualizar componentes para usar novos endpoints
 
 ---
 
-**Última atualização:** 2025-12-22
-**Versão:** 0.0.1
-**Status:** Frontend modularizado ✅ | Backend aguardando implementação ⏳
+**Última atualização:** 2025-01-XX
+**Versão:** 1.0.0
+**Status:** 
+- Backend endpoints implementados ✅ 
+- Frontend aguardando integração ⏳
+- Documentação completa ✅ (`GUIA_FRONTEND_ANALYTICS.md`)
 
