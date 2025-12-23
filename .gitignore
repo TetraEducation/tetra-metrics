@@ -67,3 +67,8 @@ processed-leads.csv
 # Arquivos temporários de planilhas
 **/.~lock.*
 **/*.lock.*
+
+# Dumps do banco de dados (manter README mas ignorar os dumps)
+dumps/*.sql
+dumps/*.sql.gz
+!dumps/README.md
