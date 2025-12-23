@@ -30,10 +30,12 @@ export function pickPhone(contact: unknown): string | null {
   const c = contact as {
     phone?: string;
     mobile?: string;
+    fullPhone?: string; // CLINT usa fullPhone (com DDI, ex: "+5584999315877")
     phones?: Array<{ phone?: string } | string>;
   };
 
   const raw =
+    c?.fullPhone ?? // Prefer fullPhone do CLINT se disponível
     c?.phone ??
     c?.mobile ??
     (Array.isArray(c?.phones)

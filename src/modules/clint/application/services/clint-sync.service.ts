@@ -338,7 +338,8 @@ export class ClintSyncService {
           const contactDataMap = new Map<
             string,
             {
-              email: string;
+              email?: string;
+              phone?: string;
               leadId?: string;
               leadData?: {
                 full_name: string;
@@ -436,12 +437,12 @@ export class ClintSyncService {
       }
 
       this.logger.log(
-        `✅ Contatos concluídos: ${totalContactsProcessed} contatos processados, ${report.totals.leadsUpserted} leads criados/atualizados, ${report.totals.contactsIgnoredNoEmail} ignorados (sem email)`,
+        `✅ Contatos concluídos: ${totalContactsProcessed} contatos processados, ${report.totals.leadsUpserted} leads criados/atualizados, ${report.totals.contactsIgnoredNoEmail} ignorados (sem email e sem telefone)`,
       );
 
       // Resumo do processamento de contatos
       this.logger.log(
-        `📊 [RESUMO CONTACTS] Processados: ${totalContactsProcessed}, Leads criados/atualizados: ${report.totals.leadsUpserted}, Ignorados (sem email): ${report.totals.contactsIgnoredNoEmail}`,
+        `📊 [RESUMO CONTACTS] Processados: ${totalContactsProcessed}, Leads criados/atualizados: ${report.totals.leadsUpserted}, Ignorados (sem email e sem telefone): ${report.totals.contactsIgnoredNoEmail}`,
       );
     } // end if skipContacts
 
@@ -566,7 +567,8 @@ export class ClintSyncService {
     contactDataMap: Map<
       string,
       {
-        email: string;
+        email?: string;
+        phone?: string;
         leadId?: string;
         leadData?: {
           full_name: string;
@@ -607,25 +609,36 @@ export class ClintSyncService {
     >,
   ): Promise<void> {
     const email = pickEmail(c);
-    if (!email) {
+    const phone = pickPhone(c);
+    const phoneNorm = phone ? phone.replace(/\D+/g, '') : null;
+
+    // Aceita contato se tiver email OU telefone
+    if (!email && !phoneNorm) {
       report.totals.contactsIgnoredNoEmail++;
       if (contactNumber <= 5) {
         this.logger.warn(
-          `⚠️ [CONTACTS] Contato ${contactNumber} ignorado: sem email. Dados: ${JSON.stringify(c)}`,
+          `⚠️ [CONTACTS] Contato ${contactNumber} ignorado: sem email e sem telefone. Dados: ${JSON.stringify(c)}`,
         );
       }
       return;
     }
 
+    // Define chave do map: prefer email, senão telefone normalizado
+    const mapKey = email ?? phoneNorm!;
+    const hasEmail = !!email;
+    const hasPhone = !!phoneNorm;
+
     if (contactNumber <= 5) {
+      const identifiers: string[] = [];
+      if (email) identifiers.push(`email=${email}`);
+      if (phoneNorm) identifiers.push(`phone=${phoneNorm}`);
       this.logger.log(
-        `🔵 [CONTACTS] Processando contato ${contactNumber}/${totalContacts}: email=${email}`,
+        `🔵 [CONTACTS] Processando contato ${contactNumber}/${totalContacts}: ${identifiers.join(', ')}`,
       );
     }
 
     const rawName = pickName(c);
     const fullName = normalizeName(rawName);
-    const phone = pickPhone(c);
     const tagKeys = pickTagKeys(c);
 
     if (dryRun) {
@@ -634,20 +647,39 @@ export class ClintSyncService {
       return;
     }
 
-    // Busca lead_id existente
-    const existing = await this.supabase
-      .from('lead_identifiers')
-      .select('lead_id')
-      .eq('type', 'email')
-      .eq('value_normalized', email)
-      .maybeSingle();
+    // Busca lead_id existente por email OU telefone
+    let leadId: string | undefined;
+    if (email) {
+      const existingByEmail = await this.supabase
+        .from('lead_identifiers')
+        .select('lead_id')
+        .eq('type', 'email')
+        .eq('value_normalized', email)
+        .maybeSingle();
 
-    if (existing.error) {
-      this.logger.error(`❌ [SUPABASE] Erro ao buscar lead_identifier: ${existing.error.message}`);
-      return;
+      if (existingByEmail.error) {
+        this.logger.error(`❌ [SUPABASE] Erro ao buscar lead_identifier por email: ${existingByEmail.error.message}`);
+        return;
+      }
+      leadId = existingByEmail.data?.lead_id;
     }
 
-    const leadId = existing.data?.lead_id;
+    // Se não encontrou por email, busca por telefone
+    if (!leadId && phoneNorm) {
+      const existingByPhone = await this.supabase
+        .from('lead_identifiers')
+        .select('lead_id')
+        .eq('type', 'phone')
+        .eq('value_normalized', phoneNorm)
+        .maybeSingle();
+
+      if (existingByPhone.error) {
+        this.logger.error(`❌ [SUPABASE] Erro ao buscar lead_identifier por telefone: ${existingByPhone.error.message}`);
+        return;
+      }
+      leadId = existingByPhone.data?.lead_id;
+    }
+
     const contact = c as {
       id?: string | number;
       created_at?: string;
@@ -661,9 +693,10 @@ export class ClintSyncService {
       : null;
 
     // Inicializa ou atualiza dados do contato no map
-    if (!contactDataMap.has(email)) {
-      contactDataMap.set(email, {
-        email,
+    if (!contactDataMap.has(mapKey)) {
+      contactDataMap.set(mapKey, {
+        email: email || undefined,
+        phone: phoneNorm || undefined,
         identifiers: [],
         events: [],
         leadTags: [],
@@ -671,7 +704,7 @@ export class ClintSyncService {
       });
     }
 
-    const contactData = contactDataMap.get(email)!;
+    const contactData = contactDataMap.get(mapKey)!;
 
     if (!leadId) {
       // Novo lead - adiciona dados para criação
@@ -704,23 +737,24 @@ export class ClintSyncService {
     }
 
     // Adiciona identifiers
-    contactData.identifiers.push({
-      type: 'email',
-      value: email,
-      value_normalized: email,
-      is_primary: true,
-    });
+    // Email é sempre primário se existir, senão telefone é primário
+    if (hasEmail) {
+      contactData.identifiers.push({
+        type: 'email',
+        value: email!,
+        value_normalized: email!,
+        is_primary: true,
+      });
+    }
 
-    if (phone) {
-      const phoneNorm = phone.replace(/\D+/g, '');
-      if (phoneNorm) {
-        contactData.identifiers.push({
-          type: 'phone',
-          value: phone,
-          value_normalized: phoneNorm,
-          is_primary: false,
-        });
-      }
+    if (hasPhone) {
+      // Se não tem email, telefone é primário; senão é secundário
+      contactData.identifiers.push({
+        type: 'phone',
+        value: phone!,
+        value_normalized: phoneNorm!,
+        is_primary: !hasEmail,
+      });
     }
 
     // Adiciona source
@@ -737,7 +771,12 @@ export class ClintSyncService {
       event_type: 'contact.imported',
       occurred_at: contactCreatedAt || new Date().toISOString(),
       dedupe_key: `clint:contact:${contactId}`,
-      payload: { contact_id: contactId, email, name: fullName },
+      payload: {
+        contact_id: contactId,
+        email: email || null,
+        phone: phoneNorm || null,
+        name: fullName,
+      },
     });
 
     // Tags (busca tag IDs)
@@ -783,7 +822,8 @@ export class ClintSyncService {
     contactDataMap: Map<
       string,
       {
-        email: string;
+        email?: string;
+        phone?: string;
         leadId?: string;
         leadData?: {
           full_name: string;
@@ -827,16 +867,16 @@ export class ClintSyncService {
 
     // 1. Criar novos leads em batch e mapear IDs
     const newLeads: Array<{
-      email: string;
+      mapKey: string;
       data: {
         full_name: string;
         first_contact_at: string;
         last_activity_at: string;
       };
     }> = [];
-    for (const [email, data] of contactDataMap.entries()) {
+    for (const [mapKey, data] of contactDataMap.entries()) {
       if (data.leadData && !data.leadId) {
-        newLeads.push({ email, data: data.leadData });
+        newLeads.push({ mapKey, data: data.leadData });
       }
     }
 
@@ -849,11 +889,11 @@ export class ClintSyncService {
         if (result.error) {
           this.logger.error(`❌ [BATCH] Erro ao inserir leads: ${result.error.message}`);
         } else if (result.data) {
-          // Mapear IDs retornados para emails
+          // Mapear IDs retornados para mapKeys
           for (let j = 0; j < result.data.length && i + j < newLeads.length; j++) {
-            const email = newLeads[i + j].email;
+            const mapKey = newLeads[i + j].mapKey;
             const leadId = result.data[j].id;
-            const contactData = contactDataMap.get(email);
+            const contactData = contactDataMap.get(mapKey);
             if (contactData) {
               contactData.leadId = leadId;
             }
