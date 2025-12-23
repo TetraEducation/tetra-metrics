@@ -16,7 +16,7 @@ pnpm run db:dump:gz       # Dump comprimido (recomendado)
 pnpm run db:restore dumps/dump_20250122_123456.sql
 
 # SQL comprimido
-pnpm run db:restore:gz dumps/dump_20250122_123456.sql.gz | psql "postgresql://postgres:postgres@localhost:54322/postgres"
+gunzip -c dumps/dump_20250122_123456.sql.gz | docker exec -i supabase_db_tetra-metrics psql -U postgres -d postgres
 ```
 
 ## Nota:
