@@ -7,4 +7,3 @@ export class WhoAmIQuery {
     return { ok: true, user };
   }
 }
-

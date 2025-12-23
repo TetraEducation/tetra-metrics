@@ -63,7 +63,10 @@ export class SupabaseLeadsRepository implements LeadsRepositoryPort {
   }
 
   async updateLead(id: string, payload: { name?: string | null }): Promise<void> {
-    const { error } = await this.supabase.from('leads').update({ name: payload.name ?? null }).eq('id', id);
+    const { error } = await this.supabase
+      .from('leads')
+      .update({ name: payload.name ?? null })
+      .eq('id', id);
     if (error) throw error;
   }
 
@@ -96,7 +99,11 @@ export class SupabaseLeadsRepository implements LeadsRepositoryPort {
     return this.mapLead(data);
   }
 
-  async findLeadBySearch(params: { name?: string; email?: string; phone?: string }): Promise<string | null> {
+  async findLeadBySearch(params: {
+    name?: string;
+    email?: string;
+    phone?: string;
+  }): Promise<string | null> {
     // Busca por email (prioridade - chave de dedupe)
     if (params.email) {
       const emailNorm = normalizeEmail(params.email);
@@ -184,10 +191,7 @@ export class SupabaseLeadsRepository implements LeadsRepositoryPort {
     const tagIds = leadTags?.map((lt) => lt.tag_id) ?? [];
     const { data: tags } =
       tagIds.length > 0
-        ? await this.supabase
-            .from('tags')
-            .select('id, key, name, category')
-            .in('id', tagIds)
+        ? await this.supabase.from('tags').select('id, key, name, category').in('id', tagIds)
         : { data: null };
     const tagsMap = new Map((tags ?? []).map((t) => [t.id, t]));
 
@@ -201,7 +205,9 @@ export class SupabaseLeadsRepository implements LeadsRepositoryPort {
     // Buscar funnel entries
     const { data: funnelEntries } = await this.supabase
       .from('lead_funnel_entries')
-      .select('id, funnel_id, current_stage_id, status, source_system, external_ref, first_seen_at, last_seen_at, meta')
+      .select(
+        'id, funnel_id, current_stage_id, status, source_system, external_ref, first_seen_at, last_seen_at, meta',
+      )
       .eq('lead_id', leadId)
       .order('first_seen_at', { ascending: true });
 
@@ -209,10 +215,7 @@ export class SupabaseLeadsRepository implements LeadsRepositoryPort {
     const funnelIds = [...new Set((funnelEntries ?? []).map((fe) => fe.funnel_id))];
     const { data: funnels } =
       funnelIds.length > 0
-        ? await this.supabase
-            .from('funnels')
-            .select('id, name')
-            .in('id', funnelIds)
+        ? await this.supabase.from('funnels').select('id, name').in('id', funnelIds)
         : { data: null };
     const funnelsMap = new Map((funnels ?? []).map((f) => [f.id, f]));
 
@@ -222,10 +225,7 @@ export class SupabaseLeadsRepository implements LeadsRepositoryPort {
       .filter((id): id is string => id !== null);
     const { data: stages } =
       stageIds.length > 0
-        ? await this.supabase
-            .from('funnel_stages')
-            .select('id, name')
-            .in('id', stageIds)
+        ? await this.supabase.from('funnel_stages').select('id, name').in('id', stageIds)
         : { data: null };
     const stagesMap = new Map((stages ?? []).map((s) => [s.id, s]));
 
@@ -253,7 +253,9 @@ export class SupabaseLeadsRepository implements LeadsRepositoryPort {
       submissionIds.length > 0
         ? await this.supabase
             .from('form_answers')
-            .select('id, form_submission_id, question_id, value_text, value_number, value_bool, value_json, created_at')
+            .select(
+              'id, form_submission_id, question_id, value_text, value_number, value_bool, value_json, created_at',
+            )
             .in('form_submission_id', submissionIds)
         : { data: null };
 
@@ -393,18 +395,3 @@ export class SupabaseLeadsRepository implements LeadsRepositoryPort {
     };
   }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

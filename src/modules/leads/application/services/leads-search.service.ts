@@ -14,7 +14,9 @@ export class LeadsSearchService {
   async searchLead(params: SearchLeadDto): Promise<LeadDetailDto> {
     // Validar que pelo menos um parâmetro foi fornecido
     if (!params.name && !params.email && !params.phone) {
-      throw new NotFoundException('É necessário fornecer pelo menos um parâmetro de busca (name, email ou phone)');
+      throw new NotFoundException(
+        'É necessário fornecer pelo menos um parâmetro de busca (name, email ou phone)',
+      );
     }
 
     this.logger.debug(`Buscando lead com parâmetros: ${JSON.stringify(params)}`);
@@ -38,4 +40,3 @@ export class LeadsSearchService {
     return leadDetail as LeadDetailDto;
   }
 }
-

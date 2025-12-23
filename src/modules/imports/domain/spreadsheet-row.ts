@@ -6,7 +6,3 @@ export interface ParsedSpreadsheet {
   headers: string[];
   rows: SpreadsheetRow[];
 }
-
-
-
-

@@ -7,15 +7,10 @@ export class SurveyInferenceService {
   /**
    * Detecta colunas que são perguntas (não são identificadores)
    */
-  inferQuestionColumns(
-    headers: string[],
-    inferred: InferredColumns,
-  ): SurveyInference {
-    const identifierKeys = new Set([
-      inferred.emailKey,
-      inferred.fullNameKey,
-      inferred.phoneKey,
-    ].filter(Boolean));
+  inferQuestionColumns(headers: string[], inferred: InferredColumns): SurveyInference {
+    const identifierKeys = new Set(
+      [inferred.emailKey, inferred.fullNameKey, inferred.phoneKey].filter(Boolean),
+    );
 
     const questionColumns: Array<{ header: string; key: string }> = [];
 
@@ -43,5 +38,3 @@ export class SurveyInferenceService {
     };
   }
 }
-
-

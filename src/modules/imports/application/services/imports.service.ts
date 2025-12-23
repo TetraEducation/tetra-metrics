@@ -1,22 +1,22 @@
-import { Inject, Injectable, Logger } from "@nestjs/common";
-import { createHash } from "crypto";
-import type { SupabaseClient } from "@supabase/supabase-js";
-import { SUPABASE } from "@/infra/supabase/supabase.provider";
-import type { ImportReport } from "@/modules/imports/domain/import-report";
-import type { SpreadsheetParserPort } from "@/modules/imports/application/ports/spreadsheet-parser.port";
-import { SPREADSHEET_PARSER } from "@/modules/imports/application/ports/spreadsheet-parser.port";
-import type { ColumnInferencePort } from "@/modules/imports/application/ports/column-inference.port";
-import { COLUMN_INFERENCE } from "@/modules/imports/application/ports/column-inference.port";
-import { SurveyInferenceService } from "@/modules/imports/application/services/survey-inference.service";
+import { Inject, Injectable, Logger } from '@nestjs/common';
+import { createHash } from 'crypto';
+import type { SupabaseClient } from '@supabase/supabase-js';
+import { SUPABASE } from '@/infra/supabase/supabase.provider';
+import type { ImportReport } from '@/modules/imports/domain/import-report';
+import type { SpreadsheetParserPort } from '@/modules/imports/application/ports/spreadsheet-parser.port';
+import { SPREADSHEET_PARSER } from '@/modules/imports/application/ports/spreadsheet-parser.port';
+import type { ColumnInferencePort } from '@/modules/imports/application/ports/column-inference.port';
+import { COLUMN_INFERENCE } from '@/modules/imports/application/ports/column-inference.port';
+import { SurveyInferenceService } from '@/modules/imports/application/services/survey-inference.service';
 import {
   SurveyIngestionService,
   type ProcessedRow,
-} from "@/modules/imports/application/services/survey-ingestion.service";
+} from '@/modules/imports/application/services/survey-ingestion.service';
 import {
   fileBaseName,
   normalizeEmail,
   normalizeText,
-} from "@/modules/imports/application/utils/normalize";
+} from '@/modules/imports/application/utils/normalize';
 
 export interface RunImportParams {
   fileBuffer: Buffer;
@@ -36,19 +36,15 @@ export class ImportsService {
     @Inject(SPREADSHEET_PARSER) private readonly parser: SpreadsheetParserPort,
     @Inject(COLUMN_INFERENCE) private readonly infer: ColumnInferencePort,
     private readonly surveyInference: SurveyInferenceService,
-    private readonly surveyIngestion: SurveyIngestionService
+    private readonly surveyIngestion: SurveyIngestionService,
   ) {}
 
   async run(params: RunImportParams): Promise<ImportReport> {
-    const fileHash = createHash("sha256")
-      .update(params.fileBuffer)
-      .digest("hex");
-    const tagKey = (
-      params.forcedTagKey ?? fileBaseName(params.originalName)
-    ).trim();
+    const fileHash = createHash('sha256').update(params.fileBuffer).digest('hex');
+    const tagKey = (params.forcedTagKey ?? fileBaseName(params.originalName)).trim();
 
     if (!tagKey) {
-      throw new Error("Nome do arquivo vazio: não consegui gerar tagKey.");
+      throw new Error('Nome do arquivo vazio: não consegui gerar tagKey.');
     }
 
     const parsed = this.parser.parse({
@@ -60,23 +56,20 @@ export class ImportsService {
     const inferred = this.infer.infer(parsed.headers, parsed.rows);
 
     // Detectar colunas de pesquisa
-    const surveyInference = this.surveyInference.inferQuestionColumns(
-      parsed.headers,
-      inferred
-    );
+    const surveyInference = this.surveyInference.inferQuestionColumns(parsed.headers, inferred);
     const hasSurvey = surveyInference.questionColumns.length > 0;
 
     this.logger.log(
       `Processando ${parsed.rows.length} linhas. Colunas detectadas: email="${
         inferred.emailKey
-      }", nome="${inferred.fullNameKey || "não detectado"}", telefone="${
-        inferred.phoneKey || "não detectado"
-      }"`
+      }", nome="${inferred.fullNameKey || 'não detectado'}", telefone="${
+        inferred.phoneKey || 'não detectado'
+      }"`,
     );
 
     if (hasSurvey) {
       this.logger.log(
-        `📋 [SURVEY] Pesquisa detectada: ${surveyInference.questionColumns.length} perguntas encontradas`
+        `📋 [SURVEY] Pesquisa detectada: ${surveyInference.questionColumns.length} perguntas encontradas`,
       );
     }
 
@@ -94,9 +87,7 @@ export class ImportsService {
         ignoredInvalidEmail: 0,
         errors: 0,
         surveyDetected: hasSurvey,
-        surveyQuestionsCount: hasSurvey
-          ? surveyInference.questionColumns.length
-          : 0,
+        surveyQuestionsCount: hasSurvey ? surveyInference.questionColumns.length : 0,
         surveyResponsesSaved: 0,
       },
       errors: [],
@@ -112,11 +103,7 @@ export class ImportsService {
     const processedRows: ProcessedRow[] = [];
 
     // Processar em chunks
-    for (
-      let chunkStart = 0;
-      chunkStart < parsed.rows.length;
-      chunkStart += CHUNK_SIZE
-    ) {
+    for (let chunkStart = 0; chunkStart < parsed.rows.length; chunkStart += CHUNK_SIZE) {
       const chunkEnd = Math.min(chunkStart + CHUNK_SIZE, parsed.rows.length);
       const chunk = parsed.rows.slice(chunkStart, chunkEnd);
       const chunkNumber = Math.floor(chunkStart / CHUNK_SIZE) + 1;
@@ -124,7 +111,7 @@ export class ImportsService {
       this.logger.log(
         `Processando chunk ${chunkNumber}/${totalChunks} (linhas ${
           chunkStart + 1
-        }-${chunkEnd} de ${parsed.rows.length})`
+        }-${chunkEnd} de ${parsed.rows.length})`,
       );
 
       // Processar chunk em paralelo (mas limitado)
@@ -140,12 +127,8 @@ export class ImportsService {
           return null;
         }
 
-        const fullName = inferred.fullNameKey
-          ? normalizeText(row[inferred.fullNameKey])
-          : null;
-        const phone = inferred.phoneKey
-          ? normalizeText(row[inferred.phoneKey])
-          : null;
+        const fullName = inferred.fullNameKey ? normalizeText(row[inferred.fullNameKey]) : null;
+        const phone = inferred.phoneKey ? normalizeText(row[inferred.phoneKey]) : null;
         const sourceRef = `${fileHash}:${rowNumber}`; // idempotente por arquivo+linha
 
         if (params.dryRun) {
@@ -154,8 +137,8 @@ export class ImportsService {
             // Log primeiras 5 linhas em dry-run para debug
             this.logger.debug(
               `[DRY-RUN] Linha ${rowNumber}: email=${emailNorm}, nome=${
-                fullName || "não informado"
-              }, telefone=${phone || "não informado"}`
+                fullName || 'não informado'
+              }, telefone=${phone || 'não informado'}`,
             );
           }
           // Em dry-run, ainda armazenamos para contagem de surveys
@@ -184,39 +167,32 @@ export class ImportsService {
             this.logger.debug(
               `Chamando RPC ingest_spreadsheet_row com: ${JSON.stringify({
                 ...rpcParams,
-                p_row: "[objeto]",
-              })}`
+                p_row: '[objeto]',
+              })}`,
             );
           }
 
-          const { data, error } = await this.supabase.rpc(
-            "ingest_spreadsheet_row",
-            rpcParams
-          );
+          const { data, error } = await this.supabase.rpc('ingest_spreadsheet_row', rpcParams);
 
           if (error) {
             // Se for erro de função não encontrada, logar de forma especial (apenas uma vez)
             if (
               rpcFunctionExists &&
-              (error.code === "42883" ||
-                error.message?.includes("does not exist") ||
-                error.message?.includes("não existe"))
+              (error.code === '42883' ||
+                error.message?.includes('does not exist') ||
+                error.message?.includes('não existe'))
             ) {
               this.logger.error(
-                `ERRO CRÍTICO: A função RPC 'ingest_spreadsheet_row' não existe no Supabase. Você precisa criar essa função primeiro.`
+                `ERRO CRÍTICO: A função RPC 'ingest_spreadsheet_row' não existe no Supabase. Você precisa criar essa função primeiro.`,
               );
-              this.logger.error(
-                `Detalhes do erro: ${error.message} (code: ${error.code})`
-              );
+              this.logger.error(`Detalhes do erro: ${error.message} (code: ${error.code})`);
               rpcFunctionExists = false;
               throw new Error(
-                `Função RPC 'ingest_spreadsheet_row' não encontrada no Supabase. Verifique se a função foi criada.`
+                `Função RPC 'ingest_spreadsheet_row' não encontrada no Supabase. Verifique se a função foi criada.`,
               );
             }
 
-            this.logger.warn(
-              `Erro na linha ${rowNumber}: ${error.message} (code: ${error.code})`
-            );
+            this.logger.warn(`Erro na linha ${rowNumber}: ${error.message} (code: ${error.code})`);
             report.totals.errors++;
             report.errors.push({
               row: rowNumber,
@@ -225,29 +201,25 @@ export class ImportsService {
             return null;
           }
 
-          if (data?.status === "ok") {
+          if (data?.status === 'ok') {
             report.totals.ok++;
             if (chunkStart === 0 && chunkIndex < 5) {
               // Log primeiras 5 importações bem-sucedidas
-              this.logger.debug(
-                `Linha ${rowNumber} importada com sucesso: ${emailNorm}`
-              );
+              this.logger.debug(`Linha ${rowNumber} importada com sucesso: ${emailNorm}`);
             }
 
             // Buscar lead_id pelo email (mais confiável que depender da RPC retornar)
             const leadRes = await this.supabase
-              .from("lead_identifiers")
-              .select("lead_id")
-              .eq("type", "email")
-              .eq("value_normalized", emailNorm)
+              .from('lead_identifiers')
+              .select('lead_id')
+              .eq('type', 'email')
+              .eq('value_normalized', emailNorm)
               .maybeSingle();
 
             const leadId = leadRes.data?.lead_id ?? null;
 
             if (!leadId) {
-              this.logger.warn(
-                `Lead_id não encontrado para email ${emailNorm} após importação`
-              );
+              this.logger.warn(`Lead_id não encontrado para email ${emailNorm} após importação`);
             }
 
             // Armazenar para processamento de surveys
@@ -260,9 +232,7 @@ export class ImportsService {
 
             return { rowNumber, email: emailNorm, leadId };
           } else {
-            this.logger.warn(
-              `Linha ${rowNumber} retornou status: ${JSON.stringify(data)}`
-            );
+            this.logger.warn(`Linha ${rowNumber} retornou status: ${JSON.stringify(data)}`);
             report.totals.ignoredInvalidEmail++;
             return null;
           }
@@ -271,15 +241,13 @@ export class ImportsService {
 
           // Se for erro de função não encontrada, não continuar processando
           if (
-            errorMessage.includes("ingest_spreadsheet_row") &&
-            errorMessage.includes("não encontrada")
+            errorMessage.includes('ingest_spreadsheet_row') &&
+            errorMessage.includes('não encontrada')
           ) {
             throw err; // Re-throw para parar o processamento
           }
 
-          this.logger.error(
-            `Exceção ao processar linha ${rowNumber}: ${errorMessage}`
-          );
+          this.logger.error(`Exceção ao processar linha ${rowNumber}: ${errorMessage}`);
           report.totals.errors++;
           report.errors.push({ row: rowNumber, reason: errorMessage });
           return null;
@@ -291,10 +259,7 @@ export class ImportsService {
         await Promise.all(chunkPromises);
       } catch (err) {
         // Se for erro crítico (função não encontrada), parar processamento
-        if (
-          err instanceof Error &&
-          err.message.includes("ingest_spreadsheet_row")
-        ) {
+        if (err instanceof Error && err.message.includes('ingest_spreadsheet_row')) {
           throw err;
         }
         // Outros erros continuam processando
@@ -303,7 +268,7 @@ export class ImportsService {
       // Log de progresso a cada chunk
       const progress = ((chunkEnd / parsed.rows.length) * 100).toFixed(1);
       this.logger.log(
-        `Progresso: ${progress}% - ${report.totals.ok} ok, ${report.totals.errors} erros, ${report.totals.ignoredInvalidEmail} ignorados de ${report.totals.processed} processados`
+        `Progresso: ${progress}% - ${report.totals.ok} ok, ${report.totals.errors} erros, ${report.totals.ignoredInvalidEmail} ignorados de ${report.totals.processed} processados`,
       );
 
       // Pequeno delay entre chunks para não sobrecarregar o Supabase
@@ -313,14 +278,14 @@ export class ImportsService {
     }
 
     this.logger.log(
-      `Importação concluída: ${report.totals.ok} ok, ${report.totals.ignoredInvalidEmail} ignorados, ${report.totals.errors} erros de ${report.totals.processed} processados`
+      `Importação concluída: ${report.totals.ok} ok, ${report.totals.ignoredInvalidEmail} ignorados, ${report.totals.errors} erros de ${report.totals.processed} processados`,
     );
 
     // Processar surveys se detectado
     if (hasSurvey && processedRows.length > 0) {
       try {
         this.logger.log(
-          `📋 [SURVEY] Iniciando ingestão de ${surveyInference.questionColumns.length} perguntas...`
+          `📋 [SURVEY] Iniciando ingestão de ${surveyInference.questionColumns.length} perguntas...`,
         );
         const surveyResult = await this.surveyIngestion.ingest({
           fileHash,
@@ -335,22 +300,17 @@ export class ImportsService {
         report.totals.surveyResponsesSaved = surveyResult.responsesSaved;
 
         this.logger.log(
-          `✅ [SURVEY] Ingestão concluída: ${surveyResult.questionsCount} perguntas, ${surveyResult.responsesSaved} respostas salvas`
+          `✅ [SURVEY] Ingestão concluída: ${surveyResult.questionsCount} perguntas, ${surveyResult.responsesSaved} respostas salvas`,
         );
       } catch (error) {
-        const errorMessage =
-          error instanceof Error ? error.message : String(error);
-        this.logger.error(
-          `❌ [SURVEY] Erro ao processar surveys: ${errorMessage}`
-        );
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        this.logger.error(`❌ [SURVEY] Erro ao processar surveys: ${errorMessage}`);
         // Não falha a importação inteira se survey falhar
       }
     }
 
     if (report.errors.length > 0 && report.errors.length <= 10) {
-      this.logger.warn(
-        `Primeiros erros: ${JSON.stringify(report.errors.slice(0, 5))}`
-      );
+      this.logger.warn(`Primeiros erros: ${JSON.stringify(report.errors.slice(0, 5))}`);
     }
 
     return report;

@@ -11,10 +11,7 @@ const authTokenValidatorProvider = {
 
 @Module({
   imports: [SupabaseModule],
-  providers: [
-    SupabaseAuthGuard,
-    authTokenValidatorProvider,
-  ],
+  providers: [SupabaseAuthGuard, authTokenValidatorProvider],
   exports: [SupabaseAuthGuard, authTokenValidatorProvider],
 })
 export class IamModule {}

@@ -1,5 +1,14 @@
-import { Inject, Injectable, UnauthorizedException, type CanActivate, type ExecutionContext } from '@nestjs/common';
-import { AUTH_TOKEN_VALIDATOR, type AuthTokenValidatorPort } from '@/modules/iam/application/ports/auth-token-validator.port';
+import {
+  Inject,
+  Injectable,
+  UnauthorizedException,
+  type CanActivate,
+  type ExecutionContext,
+} from '@nestjs/common';
+import {
+  AUTH_TOKEN_VALIDATOR,
+  type AuthTokenValidatorPort,
+} from '@/modules/iam/application/ports/auth-token-validator.port';
 import type { AuthenticatedRequest } from '@/modules/iam/interface/http/types/authenticated-request';
 
 @Injectable()
@@ -22,4 +31,3 @@ export class SupabaseAuthGuard implements CanActivate {
     return true;
   }
 }
-

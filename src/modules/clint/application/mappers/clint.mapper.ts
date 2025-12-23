@@ -36,7 +36,11 @@ export function pickPhone(contact: unknown): string | null {
   const raw =
     c?.phone ??
     c?.mobile ??
-    (Array.isArray(c?.phones) ? (typeof c.phones[0] === 'string' ? c.phones[0] : c.phones[0]?.phone) : null) ??
+    (Array.isArray(c?.phones)
+      ? typeof c.phones[0] === 'string'
+        ? c.phones[0]
+        : c.phones[0]?.phone
+      : null) ??
     null;
 
   if (!raw) return null;
@@ -55,7 +59,7 @@ export function pickTagKeys(contact: unknown): string[] {
 
   if (Array.isArray(tags)) {
     return tags
-      .map((t) => (typeof t === 'string' ? t : t?.name ?? t?.key ?? t?.title ?? ''))
+      .map((t) => (typeof t === 'string' ? t : (t?.name ?? t?.key ?? t?.title ?? '')))
       .map((s) => String(s).trim())
       .filter(Boolean);
   }
@@ -66,7 +70,3 @@ export function pickTagKeys(contact: unknown): string[] {
 
   return [];
 }
-
-
-
-

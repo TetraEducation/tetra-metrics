@@ -1,11 +1,8 @@
-import { Inject, Injectable, Logger } from "@nestjs/common";
-import type { SupabaseClient } from "@supabase/supabase-js";
-import { SUPABASE } from "@/infra/supabase/supabase.provider";
-import type { SurveyInference } from "@/modules/imports/domain/survey-inference";
-import {
-  normalizeText,
-  normalizeKey,
-} from "@/modules/imports/application/utils/normalize";
+import { Inject, Injectable, Logger } from '@nestjs/common';
+import type { SupabaseClient } from '@supabase/supabase-js';
+import { SUPABASE } from '@/infra/supabase/supabase.provider';
+import type { SurveyInference } from '@/modules/imports/domain/survey-inference';
+import { normalizeText, normalizeKey } from '@/modules/imports/application/utils/normalize';
 
 export interface ProcessedRow {
   rowNumber: number;
@@ -35,21 +32,14 @@ export class SurveyIngestionService {
   constructor(@Inject(SUPABASE) private readonly supabase: SupabaseClient) {}
 
   async ingest(params: SurveyIngestionParams): Promise<SurveyIngestionResult> {
-    const {
-      fileHash,
-      tagKey,
-      sourceSystem,
-      surveyInference,
-      processedRows,
-      dryRun,
-    } = params;
+    const { fileHash, tagKey, sourceSystem, surveyInference, processedRows, dryRun } = params;
 
     if (surveyInference.questionColumns.length === 0) {
       return { questionsCount: 0, responsesSaved: 0 };
     }
 
     this.logger.log(
-      `📋 [SURVEY] Detectadas ${surveyInference.questionColumns.length} perguntas no arquivo ${tagKey}`
+      `📋 [SURVEY] Detectadas ${surveyInference.questionColumns.length} perguntas no arquivo ${tagKey}`,
     );
 
     if (dryRun) {
@@ -64,7 +54,7 @@ export class SurveyIngestionService {
         }
       }
       this.logger.log(
-        `[DRY-RUN] [SURVEY] ${surveyInference.questionColumns.length} perguntas, ${responsesCount} respostas seriam salvas`
+        `[DRY-RUN] [SURVEY] ${surveyInference.questionColumns.length} perguntas, ${responsesCount} respostas seriam salvas`,
       );
       return {
         questionsCount: surveyInference.questionColumns.length,
@@ -74,87 +64,71 @@ export class SurveyIngestionService {
 
     // 1. Garantir form_schema existe
     const formName = tagKey.trim();
-    const formNameNormalized = formName
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-");
+    const formNameNormalized = formName.toLowerCase().replace(/[^a-z0-9]+/g, '-');
     const formSourceRef = `file:${fileHash}`;
 
     let formSchemaId: string | null = null;
 
     // Buscar form_schema existente
     const existingSchema = await this.supabase
-      .from("form_schemas")
-      .select("id")
-      .eq("source_system", sourceSystem)
-      .eq("source_ref", formSourceRef)
+      .from('form_schemas')
+      .select('id')
+      .eq('source_system', sourceSystem)
+      .eq('source_ref', formSourceRef)
       .maybeSingle();
 
-    if (existingSchema.error && existingSchema.error.code !== "PGRST116") {
-      this.logger.error(
-        `Erro ao buscar form_schema: ${existingSchema.error.message}`
-      );
+    if (existingSchema.error && existingSchema.error.code !== 'PGRST116') {
+      this.logger.error(`Erro ao buscar form_schema: ${existingSchema.error.message}`);
     } else if (existingSchema.data) {
       formSchemaId = existingSchema.data.id;
     } else {
       // Criar novo form_schema
       const schemaInsert = await this.supabase
-        .from("form_schemas")
+        .from('form_schemas')
         .insert({
           source_system: sourceSystem,
           source_ref: formSourceRef,
           name: formName,
           meta: {},
         })
-        .select("id")
+        .select('id')
         .single();
 
       if (schemaInsert.error) {
-        this.logger.error(
-          `Erro ao criar form_schema: ${schemaInsert.error.message}`
-        );
-        throw new Error(
-          `Falha ao criar form_schema: ${schemaInsert.error.message}`
-        );
+        this.logger.error(`Erro ao criar form_schema: ${schemaInsert.error.message}`);
+        throw new Error(`Falha ao criar form_schema: ${schemaInsert.error.message}`);
       }
 
       formSchemaId = schemaInsert.data.id;
-      this.logger.debug(
-        `✅ [SURVEY] Form schema criado: ${formName} (id: ${formSchemaId})`
-      );
+      this.logger.debug(`✅ [SURVEY] Form schema criado: ${formName} (id: ${formSchemaId})`);
     }
 
     if (!formSchemaId) {
-      throw new Error("Falha ao obter/criar form_schema");
+      throw new Error('Falha ao obter/criar form_schema');
     }
 
     // 2. Garantir form_questions existem (batch upsert)
     const questionsMap = new Map<string, string>(); // question_key_normalized -> question_id
 
-    const questionsToUpsert = surveyInference.questionColumns.map(
-      (q, index) => ({
-        form_schema_id: formSchemaId!,
-        key: normalizeKey(q.header),
-        label: q.header,
-        position: index + 1,
-        data_type: "text", // Por padrão, inferimos como texto
-        meta: {},
-      })
-    );
+    const questionsToUpsert = surveyInference.questionColumns.map((q, index) => ({
+      form_schema_id: formSchemaId!,
+      key: normalizeKey(q.header),
+      label: q.header,
+      position: index + 1,
+      data_type: 'text', // Por padrão, inferimos como texto
+      meta: {},
+    }));
 
     const questionsUpsert = await this.supabase
-      .from("form_questions")
+      .from('form_questions')
       .upsert(questionsToUpsert, {
-        onConflict: "form_schema_id,key_normalized",
+        onConflict: 'form_schema_id,key_normalized',
       })
-      .select("id, key_normalized");
+      .select('id, key_normalized');
 
     if (questionsUpsert.error) {
-      this.logger.error(
-        `Erro ao upsert questions: ${questionsUpsert.error.message}`
-      );
-      throw new Error(
-        `Falha ao criar/atualizar perguntas: ${questionsUpsert.error.message}`
-      );
+      this.logger.error(`Erro ao upsert questions: ${questionsUpsert.error.message}`);
+      throw new Error(`Falha ao criar/atualizar perguntas: ${questionsUpsert.error.message}`);
     }
 
     for (const q of questionsUpsert.data || []) {
@@ -162,7 +136,7 @@ export class SurveyIngestionService {
     }
 
     this.logger.debug(
-      `✅ [SURVEY] ${questionsMap.size} perguntas garantidas para form_schema ${formSchemaId}`
+      `✅ [SURVEY] ${questionsMap.size} perguntas garantidas para form_schema ${formSchemaId}`,
     );
 
     // 3. Inserir form_submissions e form_answers em batch
@@ -207,17 +181,17 @@ export class SurveyIngestionService {
     for (let i = 0; i < submissionsToInsert.length; i += BATCH_SIZE) {
       const chunk = submissionsToInsert.slice(i, i + BATCH_SIZE);
       const result = await this.supabase
-        .from("form_submissions")
-        .upsert(chunk, { onConflict: "form_schema_id,dedupe_key" })
-        .select("id, dedupe_key");
+        .from('form_submissions')
+        .upsert(chunk, { onConflict: 'form_schema_id,dedupe_key' })
+        .select('id, dedupe_key');
 
       // Sempre buscar os IDs, mesmo se o upsert não retornar (pode ser duplicata)
       const dedupeKeys = chunk.map((s) => s.dedupe_key);
       const existing = await this.supabase
-        .from("form_submissions")
-        .select("id, dedupe_key")
-        .eq("form_schema_id", formSchemaId!)
-        .in("dedupe_key", dedupeKeys);
+        .from('form_submissions')
+        .select('id, dedupe_key')
+        .eq('form_schema_id', formSchemaId!)
+        .in('dedupe_key', dedupeKeys);
 
       if (existing.data) {
         for (const sub of existing.data) {
@@ -229,12 +203,10 @@ export class SurveyIngestionService {
       if (result.error) {
         // Se houver erro mas conseguimos buscar os existentes, está ok
         if (
-          !result.error.message?.includes("duplicate key") &&
-          !result.error.message?.includes("unique constraint")
+          !result.error.message?.includes('duplicate key') &&
+          !result.error.message?.includes('unique constraint')
         ) {
-          this.logger.error(
-            `Erro ao inserir submissions: ${result.error.message}`
-          );
+          this.logger.error(`Erro ao inserir submissions: ${result.error.message}`);
         }
       } else if (result.data) {
         // Se o upsert retornou dados, também adicionar ao map (pode ter novos + atualizados)
@@ -250,19 +222,13 @@ export class SurveyIngestionService {
       const submissionId = submissionIdMap.get(dedupeKey);
 
       if (!submissionId) {
-        this.logger.warn(
-          `Submission não encontrada para dedupe_key: ${dedupeKey}`
-        );
+        this.logger.warn(`Submission não encontrada para dedupe_key: ${dedupeKey}`);
         continue;
       }
 
       for (const question of surveyInference.questionColumns) {
         const answerValue = processedRow.rowData[question.key];
-        if (
-          answerValue === null ||
-          answerValue === undefined ||
-          answerValue === ""
-        ) {
+        if (answerValue === null || answerValue === undefined || answerValue === '') {
           continue; // Ignora respostas vazias
         }
 
@@ -271,7 +237,7 @@ export class SurveyIngestionService {
 
         if (!questionId) {
           this.logger.warn(
-            `Pergunta não encontrada: ${question.header} (normalized: ${questionKeyNormalized})`
+            `Pergunta não encontrada: ${question.header} (normalized: ${questionKeyNormalized})`,
           );
           continue;
         }
@@ -283,24 +249,19 @@ export class SurveyIngestionService {
         let valueJson: unknown | null = null;
 
         // Tentar inferir tipo
-        if (typeof answerValue === "number") {
+        if (typeof answerValue === 'number') {
           valueNumber = answerValue;
-        } else if (typeof answerValue === "boolean") {
+        } else if (typeof answerValue === 'boolean') {
           valueBool = answerValue;
-        } else if (typeof answerValue === "object") {
+        } else if (typeof answerValue === 'object') {
           valueJson = answerValue;
         } else {
           const str = String(answerValue).trim().toLowerCase();
-          if (str === "true" || str === "sim" || str === "yes" || str === "1") {
+          if (str === 'true' || str === 'sim' || str === 'yes' || str === '1') {
             valueBool = true;
-          } else if (
-            str === "false" ||
-            str === "não" ||
-            str === "no" ||
-            str === "0"
-          ) {
+          } else if (str === 'false' || str === 'não' || str === 'no' || str === '0') {
             valueBool = false;
-          } else if (!isNaN(Number(answerValue)) && answerValue !== "") {
+          } else if (!isNaN(Number(answerValue)) && answerValue !== '') {
             valueNumber = Number(answerValue);
           }
         }
@@ -321,19 +282,17 @@ export class SurveyIngestionService {
     for (let i = 0; i < answersToInsert.length; i += BATCH_SIZE) {
       const chunk = answersToInsert.slice(i, i + BATCH_SIZE);
       const result = await this.supabase
-        .from("form_answers")
-        .upsert(chunk, { onConflict: "form_submission_id,question_id" })
-        .select("id");
+        .from('form_answers')
+        .upsert(chunk, { onConflict: 'form_submission_id,question_id' })
+        .select('id');
 
       if (result.error) {
         // Ignora erros de duplicata (idempotência)
         if (
-          result.error.message?.includes("duplicate key") ||
-          result.error.message?.includes("unique constraint")
+          result.error.message?.includes('duplicate key') ||
+          result.error.message?.includes('unique constraint')
         ) {
-          this.logger.debug(
-            `⚠️ [SURVEY] Algumas answers já existiam (ignoradas)`
-          );
+          this.logger.debug(`⚠️ [SURVEY] Algumas answers já existiam (ignoradas)`);
         } else {
           this.logger.error(`Erro ao inserir answers: ${result.error.message}`);
         }
@@ -343,17 +302,17 @@ export class SurveyIngestionService {
     }
 
     this.logger.log(
-      `✅ [SURVEY] ${submissionsSaved} submissions e ${answersSaved} answers salvas para ${questionsMap.size} perguntas`
+      `✅ [SURVEY] ${submissionsSaved} submissions e ${answersSaved} answers salvas para ${questionsMap.size} perguntas`,
     );
 
     // 4. Criar eventos opcionais (survey.imported por lead)
     const leadsWithSubmissions = new Set(
-      processedRows.filter((r) => r.leadId).map((r) => r.leadId!)
+      processedRows.filter((r) => r.leadId).map((r) => r.leadId!),
     );
 
     const eventsToInsert = Array.from(leadsWithSubmissions).map((leadId) => ({
       lead_id: leadId,
-      event_type: "survey.imported",
+      event_type: 'survey.imported',
       source_system: sourceSystem,
       occurred_at: new Date().toISOString(),
       ingested_at: new Date().toISOString(),
@@ -366,13 +325,8 @@ export class SurveyIngestionService {
     }));
 
     if (eventsToInsert.length > 0) {
-      await this.supabase
-        .from("lead_events")
-        .insert(eventsToInsert)
-        .select("id");
-      this.logger.debug(
-        `✅ [SURVEY] ${eventsToInsert.length} eventos survey.imported criados`
-      );
+      await this.supabase.from('lead_events').insert(eventsToInsert).select('id');
+      this.logger.debug(`✅ [SURVEY] ${eventsToInsert.length} eventos survey.imported criados`);
     }
 
     return {

@@ -19,4 +19,3 @@ export class SupabaseAuthService implements AuthTokenValidatorPort {
     };
   }
 }
-

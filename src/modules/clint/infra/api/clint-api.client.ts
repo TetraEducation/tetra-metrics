@@ -46,7 +46,7 @@ export class ClintApiClient {
 
       // A API do Clint retorna os dados em body.data
       const items: T[] = body?.data ?? [];
-      
+
       if (!items.length) {
         hasNext = false;
         break;
@@ -78,7 +78,11 @@ export class ClintApiClient {
     return all;
   }
 
-  async getPage<T = unknown>(path: string, page: number, limit = 200): Promise<{
+  async getPage<T = unknown>(
+    path: string,
+    page: number,
+    limit = 200,
+  ): Promise<{
     data: T[];
     page: number;
     totalPages: number;
@@ -100,7 +104,7 @@ export class ClintApiClient {
     const totalPages = body?.totalPages ?? 1;
     const totalCount = body?.totalCount ?? items.length;
     const currentPage = body?.page ?? page;
-    const hasNext = body?.hasNext ?? (currentPage < totalPages);
+    const hasNext = body?.hasNext ?? currentPage < totalPages;
 
     return {
       data: items,
@@ -145,4 +149,3 @@ export class ClintApiClient {
     return this.listAll('/lost-status');
   }
 }
-

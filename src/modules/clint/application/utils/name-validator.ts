@@ -140,4 +140,3 @@ export function chooseBetterName(existing: string | null, incoming: string | nul
   // Por padrão, mantém o existente (já validado)
   return existingNorm;
 }
-

@@ -4,4 +4,3 @@ import type { AuthenticatedUser } from '@/modules/iam/domain/authenticated-user'
 export type AuthenticatedRequest = Request & {
   user: AuthenticatedUser;
 };
-

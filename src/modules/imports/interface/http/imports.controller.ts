@@ -43,12 +43,14 @@ export class ImportsController {
     this.logger.debug(`Content-Type: ${request.headers['content-type']}`);
 
     if (!file) {
-      this.logger.warn('Arquivo não foi recebido. Verifique se o campo se chama "file" e está como tipo File no form-data.');
+      this.logger.warn(
+        'Arquivo não foi recebido. Verifique se o campo se chama "file" e está como tipo File no form-data.',
+      );
       throw new BadRequestException(
         'Arquivo ausente. Certifique-se de:\n' +
-        '1. Enviar o arquivo no campo "file" (minúsculo)\n' +
-        '2. Usar form-data (não raw ou x-www-form-urlencoded)\n' +
-        '3. O campo "file" deve ser do tipo File (não Text)',
+          '1. Enviar o arquivo no campo "file" (minúsculo)\n' +
+          '2. Usar form-data (não raw ou x-www-form-urlencoded)\n' +
+          '3. O campo "file" deve ser do tipo File (não Text)',
       );
     }
 
@@ -56,7 +58,9 @@ export class ImportsController {
       throw new BadRequestException('Arquivo está vazio ou inválido.');
     }
 
-    this.logger.log(`Arquivo recebido: ${file.originalname} (${file.size} bytes, ${file.mimetype})`);
+    this.logger.log(
+      `Arquivo recebido: ${file.originalname} (${file.size} bytes, ${file.mimetype})`,
+    );
 
     return this.service.run({
       fileBuffer: file.buffer,
@@ -68,4 +72,3 @@ export class ImportsController {
     });
   }
 }
-

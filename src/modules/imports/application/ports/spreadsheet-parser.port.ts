@@ -11,7 +11,3 @@ export const SPREADSHEET_PARSER = Symbol('SPREADSHEET_PARSER');
 export interface SpreadsheetParserPort {
   parse(params: ParseSpreadsheetParams): ParsedSpreadsheet;
 }
-
-
-
-

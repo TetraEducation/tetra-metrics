@@ -78,7 +78,3 @@ export class SpreadsheetParserService implements SpreadsheetParserPort {
     };
   }
 }
-
-
-
-
