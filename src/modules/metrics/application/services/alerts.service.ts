@@ -27,7 +27,6 @@ export class AlertsService {
   generateAlerts(metrics: SourceMetrics): Alert[] {
     const alerts: Alert[] = [];
 
-    // Baixa conversão
     if (metrics.conversionRate < 10 && metrics.totalLeads > 50) {
       alerts.push({
         type: 'low_conversion',
@@ -46,7 +45,6 @@ export class AlertsService {
       });
     }
 
-    // Alta perda
     const totalClosed = metrics.wonDeals + metrics.lostDeals;
     if (totalClosed > 10) {
       const lossRate = (metrics.lostDeals / totalClosed) * 100;
@@ -79,7 +77,6 @@ export class AlertsService {
     const alerts: Alert[] = [];
 
     for (const stage of stages) {
-      // Stage lento (mais de 4 dias = 96 horas)
       if (
         stage.avg_time_in_stage_hours !== null &&
         stage.avg_time_in_stage_hours > 96 &&
@@ -88,7 +85,7 @@ export class AlertsService {
         const days = Math.round((stage.avg_time_in_stage_hours / 24) * 10) / 10;
         alerts.push({
           type: 'slow_stage',
-          severity: stage.avg_time_in_stage_hours > 168 ? 'critical' : 'warning', // 7 dias = critical
+          severity: stage.avg_time_in_stage_hours > 168 ? 'critical' : 'warning',
           message: 'Stage com tempo médio muito alto',
           value: `${days} dias`,
           source: stage.source,
@@ -97,7 +94,6 @@ export class AlertsService {
         });
       }
 
-      // Stage com alta taxa de perda
       if (stage.loss_rate > 30 && stage.current_count > 5) {
         alerts.push({
           type: 'high_loss',

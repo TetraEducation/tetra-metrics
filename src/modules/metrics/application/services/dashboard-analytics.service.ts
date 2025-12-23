@@ -23,10 +23,8 @@ export class DashboardAnalyticsService {
    */
   async getDashboardOverview(): Promise<DashboardOverviewResponse> {
     try {
-      // Get all funnels analytics
       const analytics = await this.funnelAnalytics.getFunnelAnalytics();
 
-      // Calculate summary from global stats
       const summary = {
         totalLeads: analytics.global_stats.total_leads,
         totalActiveDeals: analytics.global_stats.total_active,
@@ -36,7 +34,6 @@ export class DashboardAnalyticsService {
         avgConexaoTime: await this.calculateAvgConexaoTime(analytics),
       };
 
-      // Detect bottlenecks from all stages
       const allStages: Array<{
         stage: StageAnalyticsDto;
         source?: string;
@@ -56,10 +53,8 @@ export class DashboardAnalyticsService {
       const bottlenecks = this.bottlenecksService.detectBottlenecks(allStages);
       const biggestBottleneck = this.bottlenecksService.getBiggestBottleneck(bottlenecks);
 
-      // Generate critical alerts
       const alerts: Alert[] = [];
 
-      // Alerts por origem (source system)
       const sourcesMap = new Map<
         string,
         {
@@ -95,8 +90,7 @@ export class DashboardAnalyticsService {
         });
         alerts.push(...sourceAlerts);
       }
-
-      // Alerts por stage
+      
       const stageAlerts = this.alertsService.generateStageAlerts(
         allStages.map((s) => ({
           avg_time_in_stage_hours: s.stage.avg_time_in_stage_hours,
@@ -143,10 +137,8 @@ export class DashboardAnalyticsService {
     try {
       const conexaoTimes: number[] = [];
 
-      // Find "Conexão" stages in all funnels
       for (const funnel of analytics.funnels) {
         for (const stage of funnel.stages) {
-          // Check if stage name contains "conex" (case insensitive)
           if (
             stage.stage_name.toLowerCase().includes('conex') &&
             stage.avg_time_in_stage_hours !== null &&

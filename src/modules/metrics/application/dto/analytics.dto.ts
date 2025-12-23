@@ -1,5 +1,3 @@
-// Tipos base para Analytics
-
 export interface Alert {
   type: 'high_loss' | 'slow_stage' | 'low_conversion' | 'bottleneck';
   severity: 'critical' | 'warning' | 'info';
@@ -14,12 +12,11 @@ export interface Bottleneck {
   source: string;
   funnelName: string;
   stageName: string;
-  avgTime: number; // em horas
+  avgTime: number;
   currentCount: number;
   lostCount: number;
 }
 
-// Dashboard Overview Response
 export interface DashboardOverviewResponse {
   summary: {
     totalLeads: number;
@@ -27,13 +24,12 @@ export interface DashboardOverviewResponse {
     totalWonDeals: number;
     totalLostDeals: number;
     overallConversionRate: number;
-    avgConexaoTime: number; // tempo médio no estágio "Conexão"
+    avgConexaoTime: number; 
   };
   biggestBottleneck: Bottleneck | null;
   criticalAlerts: Alert[];
 }
 
-// Sources List Response
 export interface SourceSummary {
   source: string;
   summary: {
@@ -42,8 +38,8 @@ export interface SourceSummary {
     wonDeals: number;
     lostDeals: number;
     conversionRate: number;
-    avgTime: number; // tempo médio em horas
-    healthScore: number; // 0-100
+    avgTime: number; 
+    healthScore: number;
   };
   alertsCount: number;
   funnelsCount: number;
@@ -53,7 +49,6 @@ export interface SourcesListResponse {
   sources: SourceSummary[];
 }
 
-// Source Details Response
 export interface FunnelSummary {
   funnel_id: string;
   funnel_name: string;
@@ -65,7 +60,7 @@ export interface FunnelSummary {
     lost_deals: number;
     overall_conversion_rate: number;
   };
-  stages?: StageSummary[]; // opcional, só quando includeStages=true
+  stages?: StageSummary[]; 
 }
 
 export interface StageSummary {
@@ -93,7 +88,6 @@ export interface SourceDetailsResponse {
   funnels: FunnelSummary[];
 }
 
-// Funnel Details Response
 export interface FunnelDetailsResponse {
   funnel: {
     funnel_id: string;

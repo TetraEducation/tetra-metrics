@@ -27,7 +27,7 @@ export class ImportsController {
     FileInterceptor('file', {
       storage: memoryStorage(),
       limits: {
-        fileSize: 50 * 1024 * 1024, // 50MB
+        fileSize: 50 * 1024 * 1024,
       },
     }),
   )
@@ -69,6 +69,7 @@ export class ImportsController {
       sourceSystem: body.sourceSystem ?? 'spreadsheet',
       dryRun: body.dryRun === 'true',
       forcedTagKey: body.tagKey,
+      processSurveys: body.processSurveys === 'true',
     });
   }
 }

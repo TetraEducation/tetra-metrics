@@ -19,12 +19,11 @@ export class ColumnInferenceService implements ColumnInferencePort {
     'e mail',
   ];
 
-  // Padrões para nome completo - ordem de prioridade
   private readonly fullNamePatterns = [
     'nome completo',
     'full name',
     'full_name',
-    'nome', // Coluna "Nome" pode conter nome completo se "Sobrenome" estiver vazia
+    'nome',
     'name',
     'responsavel',
     'responsável',
@@ -36,7 +35,6 @@ export class ColumnInferenceService implements ColumnInferencePort {
     'candidate',
   ];
 
-  // Colunas que devem ser IGNORADAS (não são nomes de pessoas)
   private readonly ignoredNamePatterns = [
     'lista de nomes',
     'lista nomes',
@@ -49,7 +47,6 @@ export class ColumnInferenceService implements ColumnInferencePort {
     'tetra',
     'club',
     'bf',
-    // Padrões de empresa/organização (não são nomes de pessoas)
     'nome da empresa',
     'nome empresa',
     'nome da organização',
@@ -103,10 +100,8 @@ export class ColumnInferenceService implements ColumnInferencePort {
       throw new Error('Não foi possível detectar coluna de email na planilha');
     }
 
-    // Identificar telefone PRIMEIRO para excluí-lo da busca por nome
     const phoneKey = this.findBestMatch(normalizedHeaders, headers, this.phonePatterns);
 
-    // Encontrar coluna de nome, excluindo colunas que são listas/campanhas E telefone
     const fullNameKey = this.findBestNameColumn(normalizedHeaders, headers, rows, phoneKey);
 
     return {
@@ -122,23 +117,19 @@ export class ColumnInferenceService implements ColumnInferencePort {
     rows: Array<Record<string, unknown>>,
     phoneKey: string | null,
   ): string | null {
-    // Primeiro, encontrar todas as colunas candidatas a nome
     const candidateIndices: number[] = [];
 
     for (let i = 0; i < normalizedHeaders.length; i++) {
       const normalized = normalizedHeaders[i];
       const original = originalHeaders[i];
 
-      // Ignorar a coluna de telefone se já foi identificada
       if (phoneKey && original === phoneKey) {
         continue;
       }
 
-      // Ignorar colunas que são claramente listas/campanhas
       const isIgnored = this.ignoredNamePatterns.some((pattern) => normalized.includes(pattern));
       if (isIgnored) continue;
 
-      // Ignorar colunas que mencionam telefone/whatsapp/número (mesmo que não tenham sido identificadas como phoneKey)
       const isPhoneColumn =
         normalized.includes('whatsapp') ||
         normalized.includes('telefone') ||
@@ -150,11 +141,9 @@ export class ColumnInferenceService implements ColumnInferencePort {
         (normalized.includes('num') && !normalized.includes('nome'));
 
       if (isPhoneColumn) {
-        continue; // Ignora colunas de telefone
+        continue;
       }
 
-      // Verificar se corresponde aos padrões de nome
-      // Mas apenas se NÃO for sobre empresa/organização
       const isAboutCompany =
         normalized.includes('empresa') ||
         normalized.includes('company') ||
@@ -171,7 +160,7 @@ export class ColumnInferenceService implements ColumnInferencePort {
         normalized.includes('institution');
 
       if (isAboutCompany) {
-        continue; // Ignora colunas sobre empresa
+        continue;
       }
 
       const matchesPattern = this.fullNamePatterns.some((pattern) => {
@@ -181,7 +170,6 @@ export class ColumnInferenceService implements ColumnInferencePort {
       });
 
       if (matchesPattern) {
-        // Validar que o conteúdo não é principalmente números de telefone
         const isPhoneNumberColumn = this.isPhoneNumberColumn(rows, original, normalized);
         if (!isPhoneNumberColumn) {
           candidateIndices.push(i);
@@ -193,17 +181,10 @@ export class ColumnInferenceService implements ColumnInferencePort {
       return null;
     }
 
-    // Se houver apenas uma candidata, retornar ela
     if (candidateIndices.length === 1) {
       return originalHeaders[candidateIndices[0]];
     }
 
-    // Se houver múltiplas, priorizar:
-    // 1. "nome completo" ou "full name"
-    // 2. "nome" (se a coluna "sobrenome" estiver vazia ou não existir)
-    // 3. Qualquer outra que corresponda
-
-    // Verificar se existe "sobrenome" ou "last name"
     const hasSobrenome = normalizedHeaders.some(
       (h) =>
         h.includes('sobrenome') ||
@@ -212,7 +193,6 @@ export class ColumnInferenceService implements ColumnInferencePort {
         h.includes('ultimo nome'),
     );
 
-    // Priorizar "nome completo"
     for (const index of candidateIndices) {
       const normalized = normalizedHeaders[index];
       if (normalized.includes('nome completo') || normalized.includes('full name')) {
@@ -220,12 +200,10 @@ export class ColumnInferenceService implements ColumnInferencePort {
       }
     }
 
-    // Se não tem "sobrenome", a coluna "nome" provavelmente contém o nome completo
     if (!hasSobrenome) {
       for (const index of candidateIndices) {
         const normalized = normalizedHeaders[index];
         if (normalized === 'nome' || normalized === 'name') {
-          // Verificar se a coluna realmente tem dados (não está vazia)
           const hasData = rows.some((row) => {
             const value = row[originalHeaders[index]];
             return value && String(value).trim().length > 0;
@@ -237,7 +215,6 @@ export class ColumnInferenceService implements ColumnInferencePort {
       }
     }
 
-    // Fallback: retornar a primeira candidata
     return originalHeaders[candidateIndices[0]];
   }
 
@@ -253,7 +230,6 @@ export class ColumnInferenceService implements ColumnInferencePort {
     originalHeaders: string[],
     patterns: string[],
   ): string | null {
-    // Primeiro tenta match exato
     for (const pattern of patterns) {
       const index = normalizedHeaders.findIndex((h) => h === pattern);
       if (index !== -1) {
@@ -261,7 +237,6 @@ export class ColumnInferenceService implements ColumnInferencePort {
       }
     }
 
-    // Depois tenta match que começa com o padrão
     for (const pattern of patterns) {
       const index = normalizedHeaders.findIndex((h) => h.startsWith(pattern));
       if (index !== -1) {
@@ -269,7 +244,6 @@ export class ColumnInferenceService implements ColumnInferencePort {
       }
     }
 
-    // Por último, tenta match que contém o padrão
     for (const pattern of patterns) {
       const index = normalizedHeaders.findIndex((h) => h.includes(pattern));
       if (index !== -1) {
@@ -289,7 +263,6 @@ export class ColumnInferenceService implements ColumnInferencePort {
     columnKey: string,
     normalizedHeader: string,
   ): boolean {
-    // Se o header já indica que é telefone, retornar true
     if (
       normalizedHeader.includes('whatsapp') ||
       normalizedHeader.includes('telefone') ||
@@ -302,7 +275,6 @@ export class ColumnInferenceService implements ColumnInferencePort {
       return true;
     }
 
-    // Analisar o conteúdo das células
     const nonEmptyValues = rows
       .map((row) => {
         const value = row[columnKey];
@@ -313,20 +285,16 @@ export class ColumnInferenceService implements ColumnInferencePort {
       .filter((v): v is string => v !== null);
 
     if (nonEmptyValues.length === 0) {
-      return false; // Coluna vazia não é telefone
+      return false;
     }
 
-    // Padrão para números de telefone: principalmente dígitos, possivelmente com espaços, hífens, parênteses
     const phonePattern = /^[\d\s\-\(\)\+]+$/;
-    // Padrão para telefone brasileiro: 10-11 dígitos (com ou sem formatação)
     const brazilianPhonePattern = /^[\d\s\-\(\)]{10,15}$/;
 
     let phoneCount = 0;
     for (const value of nonEmptyValues) {
-      // Remover espaços, hífens, parênteses para contar apenas dígitos
       const digitsOnly = value.replace(/[\s\-\(\)\+]/g, '');
 
-      // Se tem apenas dígitos e está no formato de telefone
       if (
         phonePattern.test(value) &&
         digitsOnly.length >= 8 &&
@@ -337,7 +305,6 @@ export class ColumnInferenceService implements ColumnInferencePort {
       }
     }
 
-    // Se mais de 70% dos valores não vazios são números de telefone, considerar como coluna de telefone
     const phoneRatio = phoneCount / nonEmptyValues.length;
     return phoneRatio > 0.7;
   }

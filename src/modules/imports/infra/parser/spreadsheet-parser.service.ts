@@ -56,8 +56,6 @@ export class SpreadsheetParserService implements SpreadsheetParserPort {
     if (workbook.SheetNames.length === 0) {
       throw new Error('Arquivo Excel não possui planilhas');
     }
-
-    // Usar a primeira planilha
     const sheetName = workbook.SheetNames[0];
     const sheet = workbook.Sheets[sheetName];
 

@@ -25,6 +25,7 @@ export interface RunImportParams {
   sourceSystem: string;
   dryRun: boolean;
   forcedTagKey?: string;
+  processSurveys?: boolean;
 }
 
 @Injectable()
@@ -55,9 +56,22 @@ export class ImportsService {
 
     const inferred = this.infer.infer(parsed.headers, parsed.rows);
 
-    // Detectar colunas de pesquisa
-    const surveyInference = this.surveyInference.inferQuestionColumns(parsed.headers, inferred);
-    const hasSurvey = surveyInference.questionColumns.length > 0;
+    let surveyInference: ReturnType<typeof this.surveyInference.inferQuestionColumns> | null =
+      null;
+    let hasSurvey = false;
+
+    if (params.processSurveys) {
+      surveyInference = this.surveyInference.inferQuestionColumns(parsed.headers, inferred);
+      hasSurvey = surveyInference.questionColumns.length > 0;
+
+      if (hasSurvey) {
+        this.logger.log(
+          `📋 [SURVEY] Pesquisa detectada: ${surveyInference.questionColumns.length} perguntas encontradas`,
+        );
+      }
+    } else {
+      this.logger.log('Processamento de surveys desabilitado. Apenas extraindo email, nome e telefone.');
+    }
 
     this.logger.log(
       `Processando ${parsed.rows.length} linhas. Colunas detectadas: email="${
@@ -66,12 +80,6 @@ export class ImportsService {
         inferred.phoneKey || 'não detectado'
       }"`,
     );
-
-    if (hasSurvey) {
-      this.logger.log(
-        `📋 [SURVEY] Pesquisa detectada: ${surveyInference.questionColumns.length} perguntas encontradas`,
-      );
-    }
 
     const report: ImportReport = {
       file: {
@@ -87,22 +95,19 @@ export class ImportsService {
         ignoredInvalidEmail: 0,
         errors: 0,
         surveyDetected: hasSurvey,
-        surveyQuestionsCount: hasSurvey ? surveyInference.questionColumns.length : 0,
+        surveyQuestionsCount: hasSurvey && surveyInference ? surveyInference.questionColumns.length : 0,
         surveyResponsesSaved: 0,
       },
       errors: [],
       dryRun: params.dryRun,
     };
 
-    const CHUNK_SIZE = 100; // Processar 100 linhas por vez
-    const BATCH_DELAY_MS = 50; // Delay entre batches para não sobrecarregar
+    const CHUNK_SIZE = 100;
+    const BATCH_DELAY_MS = 50;
     const totalChunks = Math.ceil(parsed.rows.length / CHUNK_SIZE);
-    let rpcFunctionExists = true; // Flag para evitar múltiplos logs de erro de função não encontrada
+    let rpcFunctionExists = true;
 
-    // Armazenar linhas processadas para ingestão de surveys
     const processedRows: ProcessedRow[] = [];
-
-    // Processar em chunks
     for (let chunkStart = 0; chunkStart < parsed.rows.length; chunkStart += CHUNK_SIZE) {
       const chunkEnd = Math.min(chunkStart + CHUNK_SIZE, parsed.rows.length);
       const chunk = parsed.rows.slice(chunkStart, chunkEnd);
@@ -114,9 +119,8 @@ export class ImportsService {
         }-${chunkEnd} de ${parsed.rows.length})`,
       );
 
-      // Processar chunk em paralelo (mas limitado)
       const chunkPromises = chunk.map(async (row, chunkIndex) => {
-        const rowNumber = chunkStart + chunkIndex + 2; // header na linha 1
+        const rowNumber = chunkStart + chunkIndex + 2;
         report.totals.processed++;
 
         const emailRaw = normalizeText(row[inferred.emailKey]);
@@ -129,23 +133,21 @@ export class ImportsService {
 
         const fullName = inferred.fullNameKey ? normalizeText(row[inferred.fullNameKey]) : null;
         const phone = inferred.phoneKey ? normalizeText(row[inferred.phoneKey]) : null;
-        const sourceRef = `${fileHash}:${rowNumber}`; // idempotente por arquivo+linha
+        const sourceRef = `${fileHash}:${rowNumber}`;
 
         if (params.dryRun) {
           report.totals.ok++;
           if (chunkStart === 0 && chunkIndex < 5) {
-            // Log primeiras 5 linhas em dry-run para debug
             this.logger.debug(
               `[DRY-RUN] Linha ${rowNumber}: email=${emailNorm}, nome=${
                 fullName || 'não informado'
               }, telefone=${phone || 'não informado'}`,
             );
           }
-          // Em dry-run, ainda armazenamos para contagem de surveys
           processedRows.push({
             rowNumber,
             email: emailNorm,
-            leadId: null, // Não temos lead_id em dry-run
+            leadId: null,
             rowData: row,
           });
           return null;
@@ -159,11 +161,10 @@ export class ImportsService {
             p_source_system: params.sourceSystem,
             p_source_ref: sourceRef,
             p_tag_key: tagKey,
-            p_row: row, // jsonb
+            p_row: row,
           };
 
           if (chunkStart === 0 && chunkIndex === 0) {
-            // Log dos parâmetros da primeira chamada para debug
             this.logger.debug(
               `Chamando RPC ingest_spreadsheet_row com: ${JSON.stringify({
                 ...rpcParams,
@@ -175,7 +176,6 @@ export class ImportsService {
           const { data, error } = await this.supabase.rpc('ingest_spreadsheet_row', rpcParams);
 
           if (error) {
-            // Se for erro de função não encontrada, logar de forma especial (apenas uma vez)
             if (
               rpcFunctionExists &&
               (error.code === '42883' ||
@@ -204,11 +204,9 @@ export class ImportsService {
           if (data?.status === 'ok') {
             report.totals.ok++;
             if (chunkStart === 0 && chunkIndex < 5) {
-              // Log primeiras 5 importações bem-sucedidas
               this.logger.debug(`Linha ${rowNumber} importada com sucesso: ${emailNorm}`);
             }
 
-            // Buscar lead_id pelo email (mais confiável que depender da RPC retornar)
             const leadRes = await this.supabase
               .from('lead_identifiers')
               .select('lead_id')
@@ -222,7 +220,6 @@ export class ImportsService {
               this.logger.warn(`Lead_id não encontrado para email ${emailNorm} após importação`);
             }
 
-            // Armazenar para processamento de surveys
             processedRows.push({
               rowNumber,
               email: emailNorm,
@@ -239,12 +236,11 @@ export class ImportsService {
         } catch (err) {
           const errorMessage = err instanceof Error ? err.message : String(err);
 
-          // Se for erro de função não encontrada, não continuar processando
           if (
             errorMessage.includes('ingest_spreadsheet_row') &&
             errorMessage.includes('não encontrada')
           ) {
-            throw err; // Re-throw para parar o processamento
+            throw err;
           }
 
           this.logger.error(`Exceção ao processar linha ${rowNumber}: ${errorMessage}`);
@@ -254,24 +250,19 @@ export class ImportsService {
         }
       });
 
-      // Aguardar chunk atual terminar
       try {
         await Promise.all(chunkPromises);
       } catch (err) {
-        // Se for erro crítico (função não encontrada), parar processamento
         if (err instanceof Error && err.message.includes('ingest_spreadsheet_row')) {
           throw err;
         }
-        // Outros erros continuam processando
       }
 
-      // Log de progresso a cada chunk
       const progress = ((chunkEnd / parsed.rows.length) * 100).toFixed(1);
       this.logger.log(
         `Progresso: ${progress}% - ${report.totals.ok} ok, ${report.totals.errors} erros, ${report.totals.ignoredInvalidEmail} ignorados de ${report.totals.processed} processados`,
       );
 
-      // Pequeno delay entre chunks para não sobrecarregar o Supabase
       if (chunkEnd < parsed.rows.length && !params.dryRun) {
         await new Promise((resolve) => setTimeout(resolve, BATCH_DELAY_MS));
       }
@@ -281,8 +272,7 @@ export class ImportsService {
       `Importação concluída: ${report.totals.ok} ok, ${report.totals.ignoredInvalidEmail} ignorados, ${report.totals.errors} erros de ${report.totals.processed} processados`,
     );
 
-    // Processar surveys se detectado
-    if (hasSurvey && processedRows.length > 0) {
+    if (params.processSurveys && hasSurvey && surveyInference && processedRows.length > 0) {
       try {
         this.logger.log(
           `📋 [SURVEY] Iniciando ingestão de ${surveyInference.questionColumns.length} perguntas...`,
@@ -305,8 +295,11 @@ export class ImportsService {
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
         this.logger.error(`❌ [SURVEY] Erro ao processar surveys: ${errorMessage}`);
-        // Não falha a importação inteira se survey falhar
       }
+    } else if (hasSurvey && !params.processSurveys) {
+      this.logger.log(
+        '📋 [SURVEY] Pesquisas detectadas, mas processamento desabilitado pela flag processSurveys=false',
+      );
     }
 
     if (report.errors.length > 0 && report.errors.length <= 10) {

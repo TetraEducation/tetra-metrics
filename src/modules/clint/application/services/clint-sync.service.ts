@@ -59,7 +59,6 @@ export class ClintSyncService {
       `Iniciando sincronização do Clint (dryRun=${dryRun}, skipContacts=${skipContacts}, skipDeals=${skipDeals})`,
     );
 
-    // 1) Catálogos (tags/origins/groups/lost-status)
     this.logger.log('Buscando catálogos (tags, origins, groups, lost-status)...');
     const [tags, origins, groups, lostStatus] = await Promise.all([
       this.clintApi.tags(),
@@ -85,7 +84,6 @@ export class ClintSyncService {
       errors: [],
     };
 
-    // TAGS (catálogo)
     this.logger.log(`Processando ${tags.length} tags...`);
     if (!dryRun) {
       for (const t of tags) {
@@ -104,7 +102,6 @@ export class ClintSyncService {
       }
     }
 
-    // ORIGINS -> FUNNELS (catálogo)
     this.logger.log(`Processando ${origins.length} origins...`);
     if (!dryRun) {
       for (const o of origins) {
@@ -129,7 +126,6 @@ export class ClintSyncService {
         const funnelKey = `clint-origin-${originId}`;
         const funnelKeyNormalized = funnelKey.toLowerCase().trim();
 
-        // Verifica se o funnel já existe para atualizar o nome se mudou
         const existingFunnel = await this.supabase
           .from('funnels')
           .select('id, name')
@@ -161,7 +157,6 @@ export class ClintSyncService {
           continue;
         }
 
-        // Cria ou atualiza funnel_alias
         const aliasResult = await this.supabase.from('funnel_aliases').upsert(
           {
             funnel_id: funnelId,
@@ -181,14 +176,12 @@ export class ClintSyncService {
           );
         }
 
-        // Log se o nome do funnel mudou
         if (existingFunnel.data && existingFunnel.data.name !== originName) {
           this.logger.debug(
             `Nome do funnel atualizado: "${existingFunnel.data.name}" → "${originName}" (origin_id: ${originId})`,
           );
         }
 
-        // ORIGIN.STAGES -> FUNNEL_STAGES (catálogo real do Kanban)
         const stages = origin.stages ?? [];
         this.logger.debug(`Origin ${originId} tem ${stages.length} stages`);
 
@@ -227,10 +220,8 @@ export class ClintSyncService {
       }
     }
 
-    // Groups são apenas para report/telemetria (não usamos mais para stages)
     this.logger.log(`Groups encontrados: ${groups.length} (usado apenas para telemetria)`);
 
-    // Garante funil fallback (para deals sem origin)
     const fallbackFunnelKey = 'clint-origin-unknown';
     const fallbackFunnelKeyNormalized = fallbackFunnelKey.toLowerCase().trim();
 
@@ -247,8 +238,6 @@ export class ClintSyncService {
       }
     }
 
-    // 2) CONTACTS (leads + identifiers + sources + lead_tags)
-    // Processar página por página para não carregar tudo na memória
     if (skipContacts) {
       this.logger.log('⏭️  [CONTACTS] Pulando processamento de contatos (--skip-contacts)');
     } else {
@@ -257,7 +246,7 @@ export class ClintSyncService {
       );
 
       const CHUNK_SIZE = 50; // Processar 50 contatos por vez
-      const BATCH_DELAY_MS = 100; // Delay entre chunks (ms)
+      const BATCH_DELAY_MS = 100;
 
       let currentPage = 1;
       let hasMorePages = true;
@@ -266,10 +255,8 @@ export class ClintSyncService {
       let totalContactsFetched = 0;
 
       while (hasMorePages) {
-        // Buscar uma página de contatos com retry em caso de página vazia (possível rate limit)
         let pageResult = await this.clintApi.contactsPage(currentPage);
 
-        // Definir totalPages na primeira página (mesmo que venha vazia)
         if (currentPage === 1 && totalPages === 0) {
           totalPages = pageResult.totalPages;
           this.logger.log(
@@ -289,15 +276,13 @@ export class ClintSyncService {
         let retryCount = 0;
         const MAX_RETRIES = 3;
 
-        // Se a página vier vazia, tentar novamente com delay progressivo (pode ser rate limit)
-        // Só faz retry se não for a última página esperada
         while (
           pageResult.data.length === 0 &&
           retryCount < MAX_RETRIES &&
           (totalPages === 0 || currentPage <= totalPages)
         ) {
           retryCount++;
-          const delayMs = retryCount * 1000; // Delay progressivo: 1s, 2s, 3s
+          const delayMs = retryCount * 1000;
           const totalPagesStr = totalPages > 0 ? `/${totalPages}` : '';
           this.logger.warn(
             `⚠️ [CONTACTS] Página ${currentPage}${totalPagesStr} vazia (tentativa ${retryCount}/${MAX_RETRIES}). Aguardando ${delayMs}ms antes de tentar novamente...`,
@@ -305,7 +290,6 @@ export class ClintSyncService {
           await new Promise((resolve) => setTimeout(resolve, delayMs));
           pageResult = await this.clintApi.contactsPage(currentPage);
 
-          // Atualizar totalPages se ainda não foi definido
           if (totalPages === 0 && pageResult.totalPages > 0) {
             totalPages = pageResult.totalPages;
           }
@@ -326,7 +310,6 @@ export class ClintSyncService {
           `🔵 [CONTACTS] Página ${currentPage}/${totalPages}: ${contacts.length} contatos recebidos (total acumulado: ${totalContactsFetched})`,
         );
 
-        // Processar contatos da página em chunks
         const totalChunks = Math.ceil(contacts.length / CHUNK_SIZE);
 
         for (let chunkStart = 0; chunkStart < contacts.length; chunkStart += CHUNK_SIZE) {
@@ -334,7 +317,6 @@ export class ClintSyncService {
           const chunk = contacts.slice(chunkStart, chunkEnd);
           const chunkNumber = Math.floor(chunkStart / CHUNK_SIZE) + 1;
 
-          // Coletar dados do chunk para batch inserts
           const contactDataMap = new Map<
             string,
             {
@@ -383,7 +365,6 @@ export class ClintSyncService {
             }
           >();
 
-          // Processar chunk coletando dados
           for (const c of chunk) {
             const contactNumberInPage = chunkStart + chunk.indexOf(c) + 1;
             const contactNumberGlobal = totalContactsProcessed + contactNumberInPage;
@@ -406,12 +387,10 @@ export class ClintSyncService {
             }
           }
 
-          // Executar batch inserts
           if (!dryRun && contactDataMap.size > 0) {
             await this.executeBatchInserts(contactDataMap);
           }
 
-          // Pequeno delay entre chunks
           if (chunkEnd < contacts.length && !dryRun) {
             await new Promise((resolve) => setTimeout(resolve, BATCH_DELAY_MS));
           }
@@ -419,17 +398,14 @@ export class ClintSyncService {
 
         totalContactsProcessed += contacts.length;
 
-        // Log de progresso por página
         const pageProgress = ((currentPage / totalPages) * 100).toFixed(1);
         this.logger.log(
           `📊 [CONTACTS] Progresso: ${pageProgress}% (página ${currentPage}/${totalPages}, ${totalContactsProcessed} contatos processados, ${report.totals.leadsUpserted} leads criados/atualizados)`,
         );
 
-        // Verificar se há mais páginas
         hasMorePages = pageResult.hasNext && currentPage < totalPages;
         currentPage++;
 
-        // Safety: limite de 1000 páginas
         if (currentPage > 1000) {
           this.logger.warn('⚠️ [CONTACTS] Limite de 1000 páginas atingido');
           break;
@@ -440,14 +416,11 @@ export class ClintSyncService {
         `✅ Contatos concluídos: ${totalContactsProcessed} contatos processados, ${report.totals.leadsUpserted} leads criados/atualizados, ${report.totals.contactsIgnoredNoEmail} ignorados (sem email e sem telefone)`,
       );
 
-      // Resumo do processamento de contatos
       this.logger.log(
         `📊 [RESUMO CONTACTS] Processados: ${totalContactsProcessed}, Leads criados/atualizados: ${report.totals.leadsUpserted}, Ignorados (sem email e sem telefone): ${report.totals.contactsIgnoredNoEmail}`,
       );
-    } // end if skipContacts
+    }
 
-    // 3) DEALS (lead_funnel_entries)
-    // Buscar OPEN, WON, LOST para garantir histórico completo
     if (skipDeals) {
       this.logger.log('⏭️  [DEALS] Pulando processamento de deals (--skip-deals)');
     } else {
@@ -471,7 +444,6 @@ export class ClintSyncService {
             const deals = pageResult.data ?? [];
             const totalPages = pageResult.totalPages ?? 1;
 
-            // Reset error counter on success
             consecutiveErrors = 0;
 
             this.logger.log(
@@ -485,7 +457,6 @@ export class ClintSyncService {
               break;
             }
 
-            // Processar deals da página em batch para melhor performance
             await this.processDealsBatch(deals, status, currentDealPage, report, dryRun);
 
             const progress = ((currentDealPage / totalPages) * 100).toFixed(1);
@@ -516,27 +487,23 @@ export class ClintSyncService {
                 error: errorMessage,
                 statusCode,
               });
-              break; // Pula para o próximo status
+              break;
             }
 
-            // Exponential backoff: 2s, 4s, 8s
             const delayMs = Math.pow(2, consecutiveErrors) * 1000;
             this.logger.warn(
               `⏳ [DEALS] Aguardando ${delayMs}ms antes de tentar novamente (tentativa ${consecutiveErrors}/${MAX_CONSECUTIVE_ERRORS})...`,
             );
             await new Promise((resolve) => setTimeout(resolve, delayMs));
 
-            // Não incrementa a página para tentar novamente
             continue;
           }
 
-          // Safety: limite de 1000 páginas
           if (currentDealPage > 1000) {
             this.logger.warn(`⚠️ [DEALS] Limite de 1000 páginas atingido para status ${status}`);
             break;
           }
 
-          // Delay entre páginas
           if (hasMoreDeals && !dryRun) {
             await new Promise((resolve) => setTimeout(resolve, 100));
           }
@@ -548,7 +515,7 @@ export class ClintSyncService {
       this.logger.log(
         `✅ [DEALS] Todos os status processados. Total de entries: ${report.totals.funnelEntriesUpserted}`,
       );
-    } // end if skipDeals
+    }
 
     // TODO: Implementar refresh de lead_stats (projeção/cache para métricas)
     // - Calcular first_contact_at, last_activity_at, distinct_tag_count, event_count, source_count
@@ -612,7 +579,6 @@ export class ClintSyncService {
     const phone = pickPhone(c);
     const phoneNorm = phone ? phone.replace(/\D+/g, '') : null;
 
-    // Aceita contato se tiver email OU telefone
     if (!email && !phoneNorm) {
       report.totals.contactsIgnoredNoEmail++;
       if (contactNumber <= 5) {
@@ -623,7 +589,6 @@ export class ClintSyncService {
       return;
     }
 
-    // Define chave do map: prefer email, senão telefone normalizado
     const mapKey = email ?? phoneNorm!;
     const hasEmail = !!email;
     const hasPhone = !!phoneNorm;
@@ -647,7 +612,6 @@ export class ClintSyncService {
       return;
     }
 
-    // Busca lead_id existente por email OU telefone
     let leadId: string | undefined;
     if (email) {
       const existingByEmail = await this.supabase
@@ -664,7 +628,6 @@ export class ClintSyncService {
       leadId = existingByEmail.data?.lead_id;
     }
 
-    // Se não encontrou por email, busca por telefone
     if (!leadId && phoneNorm) {
       const existingByPhone = await this.supabase
         .from('lead_identifiers')
@@ -692,7 +655,6 @@ export class ClintSyncService {
       ? new Date(contact.updated_at).toISOString()
       : null;
 
-    // Inicializa ou atualiza dados do contato no map
     if (!contactDataMap.has(mapKey)) {
       contactDataMap.set(mapKey, {
         email: email || undefined,
@@ -707,8 +669,6 @@ export class ClintSyncService {
     const contactData = contactDataMap.get(mapKey)!;
 
     if (!leadId) {
-      // Novo lead - adiciona dados para criação
-      // full_name é NOT NULL no banco, então garantimos uma string válida
       const cleanName = fullName && fullName.trim() ? fullName.trim() : '';
       contactData.leadData = {
         full_name: cleanName,
@@ -717,7 +677,6 @@ export class ClintSyncService {
       };
       report.totals.leadsUpserted++;
     } else {
-      // Lead existente - adiciona atualizações
       contactData.leadId = leadId;
       contactData.leadUpdates = {};
       if (contactUpdatedAt) contactData.leadUpdates.last_activity_at = contactUpdatedAt;
@@ -736,8 +695,6 @@ export class ClintSyncService {
       }
     }
 
-    // Adiciona identifiers
-    // Email é sempre primário se existir, senão telefone é primário
     if (hasEmail) {
       contactData.identifiers.push({
         type: 'email',
@@ -748,7 +705,6 @@ export class ClintSyncService {
     }
 
     if (hasPhone) {
-      // Se não tem email, telefone é primário; senão é secundário
       contactData.identifiers.push({
         type: 'phone',
         value: phone!,
@@ -757,7 +713,6 @@ export class ClintSyncService {
       });
     }
 
-    // Adiciona source
     const contactId = String(contact?.id ?? '');
     contactData.source = {
       source_ref: `contact:${contactId}`,
@@ -766,7 +721,6 @@ export class ClintSyncService {
       meta: c ?? {},
     };
 
-    // Adiciona evento
     contactData.events.push({
       event_type: 'contact.imported',
       occurred_at: contactCreatedAt || new Date().toISOString(),
@@ -779,7 +733,6 @@ export class ClintSyncService {
       },
     });
 
-    // Tags (busca tag IDs)
     for (const keyRaw of tagKeys) {
       const key = keyRaw.trim();
       if (!key) continue;
@@ -865,7 +818,6 @@ export class ClintSyncService {
   ): Promise<void> {
     const BATCH_INSERT_SIZE = 100;
 
-    // 1. Criar novos leads em batch e mapear IDs
     const newLeads: Array<{
       mapKey: string;
       data: {
@@ -889,7 +841,6 @@ export class ClintSyncService {
         if (result.error) {
           this.logger.error(`❌ [BATCH] Erro ao inserir leads: ${result.error.message}`);
         } else if (result.data) {
-          // Mapear IDs retornados para mapKeys
           for (let j = 0; j < result.data.length && i + j < newLeads.length; j++) {
             const mapKey = newLeads[i + j].mapKey;
             const leadId = result.data[j].id;
@@ -903,7 +854,6 @@ export class ClintSyncService {
       }
     }
 
-    // 2. Atualizar leads existentes em paralelo
     const updatePromises: Array<Promise<unknown>> = [];
     for (const data of contactDataMap.values()) {
       if (data.leadId && data.leadUpdates) {
@@ -919,7 +869,6 @@ export class ClintSyncService {
       this.logger.debug(`✅ [BATCH] ${updatePromises.length} leads atualizados`);
     }
 
-    // 3. Inserir identifiers em batch
     const identifiersToInsert: Array<{
       lead_id: string;
       type: string;
@@ -949,7 +898,6 @@ export class ClintSyncService {
       }
     }
 
-    // 4. Inserir sources em batch
     const sourcesToInsert: Array<{
       lead_id: string;
       source_system: string;
@@ -982,9 +930,6 @@ export class ClintSyncService {
       }
     }
 
-    // 5. Inserir events em batch
-    // Nota: A constraint UNIQUE (source_system, dedupe_key) é parcial (apenas quando dedupe_key não é nulo)
-    // O Supabase não suporta onConflict para constraints parciais, então usamos insert e ignoramos erros de duplicata
     const eventsToInsert: Array<{
       lead_id: string;
       event_type: string;
@@ -1020,7 +965,6 @@ export class ClintSyncService {
         const chunk = eventsToInsert.slice(i, i + BATCH_INSERT_SIZE);
         const result = await this.supabase.from('lead_events').insert(chunk);
         if (result.error) {
-          // Ignora erros de chave duplicada (evento já existe)
           if (
             result.error.message?.includes('duplicate key') ||
             result.error.message?.includes('unique constraint')
@@ -1035,8 +979,6 @@ export class ClintSyncService {
       }
     }
 
-    // 6. Inserir lead_tags em batch
-    // Deduplicar dentro do batch para evitar erro "cannot affect row a second time"
     const leadTagsMap = new Map<
       string,
       {
@@ -1086,7 +1028,6 @@ export class ClintSyncService {
     report: ClintSyncReport,
     dryRun: boolean,
   ): Promise<void> {
-    // Método mantido para compatibilidade, mas não usado mais
     // TODO: Remover após validação
     const contactDataMap = new Map();
     await this.processContactForBatch(
@@ -1112,10 +1053,9 @@ export class ClintSyncService {
   ): Promise<void> {
     if (deals.length === 0) return;
 
-    const CONCURRENT_DEALS = 50; // Process 50 deals at a time
+    const CONCURRENT_DEALS = 50;
     const chunks: unknown[][] = [];
 
-    // Split deals into chunks
     for (let i = 0; i < deals.length; i += CONCURRENT_DEALS) {
       chunks.push(deals.slice(i, i + CONCURRENT_DEALS));
     }
@@ -1130,7 +1070,6 @@ export class ClintSyncService {
 
       this.logger.debug(`🔵 [DEALS] Batch ${chunkNumber}/${chunks.length} (${chunk.length} deals)`);
 
-      // Process chunk in parallel
       const results = await Promise.allSettled(
         chunk.map((deal, idx) =>
           this.processDeal(
@@ -1143,7 +1082,6 @@ export class ClintSyncService {
         ),
       );
 
-      // Count successes and failures
       const succeeded = results.filter((r) => r.status === 'fulfilled').length;
       const failed = results.filter((r) => r.status === 'rejected').length;
 
@@ -1157,7 +1095,6 @@ export class ClintSyncService {
         );
       }
 
-      // Small delay between batches to avoid overwhelming the database
       if (chunkIdx < chunks.length - 1 && !dryRun) {
         await new Promise((resolve) => setTimeout(resolve, 50));
       }
@@ -1185,7 +1122,6 @@ export class ClintSyncService {
     }
 
     try {
-      // Call the SQL function via RPC
       const { data, error } = await this.supabase.rpc('ingest_clint_deal', { p_deal: d });
 
       if (error) {

@@ -18,11 +18,11 @@ export function fileBaseName(originalName: string): string {
 export function normalizeKey(input: string): string {
   return input
     .trim()
-    .normalize('NFKD') // separa acentos dos caracteres base
-    .replace(/[\u0300-\u036f]/g, '') // remove diacríticos (acentos)
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
-    .replace(/&/g, ' e ') // substitui & por " e "
-    .replace(/[^a-z0-9]+/g, '-') // tudo que não é ASCII alfanumérico vira hífen
-    .replace(/(^-|-$)+/g, '') // remove hífens nas pontas
-    .replace(/-+/g, '-'); // colapsa múltiplos hífens em um só
+    .replace(/&/g, ' e ')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)+/g, '') 
+    .replace(/-+/g, '-'); 
 }

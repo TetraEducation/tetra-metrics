@@ -104,7 +104,6 @@ export class SupabaseLeadsRepository implements LeadsRepositoryPort {
     email?: string;
     phone?: string;
   }): Promise<string | null> {
-    // Busca por email (prioridade - chave de dedupe)
     if (params.email) {
       const emailNorm = normalizeEmail(params.email);
       const { data, error } = await this.supabase
@@ -117,8 +116,6 @@ export class SupabaseLeadsRepository implements LeadsRepositoryPort {
       if (error) throw error;
       if (data) return data.lead_id;
     }
-
-    // Busca por telefone
     if (params.phone) {
       const phoneNorm = params.phone.replace(/\D+/g, '');
       if (phoneNorm) {
@@ -134,7 +131,6 @@ export class SupabaseLeadsRepository implements LeadsRepositoryPort {
       }
     }
 
-    // Busca por nome (busca parcial no full_name)
     if (params.name) {
       const nameSearch = normalizeText(params.name);
       if (nameSearch) {
@@ -154,7 +150,6 @@ export class SupabaseLeadsRepository implements LeadsRepositoryPort {
   }
 
   async getLeadDetailById(leadId: string): Promise<unknown> {
-    // Buscar lead básico
     const { data: lead, error: leadError } = await this.supabase
       .from('leads')
       .select('id, full_name, first_contact_at, last_activity_at, created_at, updated_at')
@@ -165,7 +160,6 @@ export class SupabaseLeadsRepository implements LeadsRepositoryPort {
       throw leadError ?? new Error('Lead not found');
     }
 
-    // Buscar identifiers
     const { data: identifiers } = await this.supabase
       .from('lead_identifiers')
       .select('id, type, value, value_normalized, is_primary, created_at')
@@ -173,21 +167,18 @@ export class SupabaseLeadsRepository implements LeadsRepositoryPort {
       .order('is_primary', { ascending: false })
       .order('created_at', { ascending: true });
 
-    // Buscar sources
     const { data: sources } = await this.supabase
       .from('lead_sources')
       .select('id, source_system, source_ref, first_seen_at, last_seen_at, meta')
       .eq('lead_id', leadId)
       .order('first_seen_at', { ascending: true });
 
-    // Buscar tags com join na tabela tags
     const { data: leadTags } = await this.supabase
       .from('lead_tags')
       .select('tag_id, source_system, source_ref, first_seen_at, last_seen_at, meta')
       .eq('lead_id', leadId)
       .order('first_seen_at', { ascending: true });
 
-    // Buscar detalhes das tags
     const tagIds = leadTags?.map((lt) => lt.tag_id) ?? [];
     const { data: tags } =
       tagIds.length > 0
@@ -195,14 +186,12 @@ export class SupabaseLeadsRepository implements LeadsRepositoryPort {
         : { data: null };
     const tagsMap = new Map((tags ?? []).map((t) => [t.id, t]));
 
-    // Buscar events
     const { data: events } = await this.supabase
       .from('lead_events')
       .select('id, event_type, source_system, occurred_at, ingested_at, dedupe_key, payload')
       .eq('lead_id', leadId)
       .order('occurred_at', { ascending: false });
 
-    // Buscar funnel entries
     const { data: funnelEntries } = await this.supabase
       .from('lead_funnel_entries')
       .select(
@@ -211,7 +200,6 @@ export class SupabaseLeadsRepository implements LeadsRepositoryPort {
       .eq('lead_id', leadId)
       .order('first_seen_at', { ascending: true });
 
-    // Buscar detalhes dos funnels
     const funnelIds = [...new Set((funnelEntries ?? []).map((fe) => fe.funnel_id))];
     const { data: funnels } =
       funnelIds.length > 0
@@ -219,7 +207,6 @@ export class SupabaseLeadsRepository implements LeadsRepositoryPort {
         : { data: null };
     const funnelsMap = new Map((funnels ?? []).map((f) => [f.id, f]));
 
-    // Buscar detalhes dos stages
     const stageIds = (funnelEntries ?? [])
       .map((fe) => fe.current_stage_id)
       .filter((id): id is string => id !== null);
@@ -229,14 +216,12 @@ export class SupabaseLeadsRepository implements LeadsRepositoryPort {
         : { data: null };
     const stagesMap = new Map((stages ?? []).map((s) => [s.id, s]));
 
-    // Buscar form_submissions (surveys/pesquisas)
     const { data: formSubmissions } = await this.supabase
       .from('form_submissions')
       .select('id, form_schema_id, submitted_at, source_ref, dedupe_key, raw_payload, created_at')
       .eq('lead_id', leadId)
       .order('submitted_at', { ascending: false });
 
-    // Buscar form_schemas relacionados
     const formSchemaIds = [...new Set((formSubmissions ?? []).map((fs) => fs.form_schema_id))];
     const { data: formSchemas } =
       formSchemaIds.length > 0
@@ -247,7 +232,6 @@ export class SupabaseLeadsRepository implements LeadsRepositoryPort {
         : { data: null };
     const formSchemasMap = new Map((formSchemas ?? []).map((fs) => [fs.id, fs]));
 
-    // Buscar form_answers para todas as submissions
     const submissionIds = (formSubmissions ?? []).map((fs) => fs.id);
     const { data: formAnswers } =
       submissionIds.length > 0
@@ -259,7 +243,6 @@ export class SupabaseLeadsRepository implements LeadsRepositoryPort {
             .in('form_submission_id', submissionIds)
         : { data: null };
 
-    // Buscar form_questions relacionadas
     const questionIds = [...new Set((formAnswers ?? []).map((fa) => fa.question_id))];
     const { data: formQuestions } =
       questionIds.length > 0
@@ -270,7 +253,6 @@ export class SupabaseLeadsRepository implements LeadsRepositoryPort {
         : { data: null };
     const formQuestionsMap = new Map((formQuestions ?? []).map((fq) => [fq.id, fq]));
 
-    // Agrupar answers por submission
     const answersBySubmission = new Map<string, typeof formAnswers>();
     for (const answer of formAnswers ?? []) {
       const existing = answersBySubmission.get(answer.form_submission_id) ?? [];
@@ -278,7 +260,6 @@ export class SupabaseLeadsRepository implements LeadsRepositoryPort {
       answersBySubmission.set(answer.form_submission_id, existing);
     }
 
-    // Montar resposta
     return {
       id: lead.id,
       full_name: lead.full_name,

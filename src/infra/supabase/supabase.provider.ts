@@ -16,7 +16,7 @@ export const supabaseProvider: Provider = {
     const key = requiredEnv('SUPABASE_SERVICE_ROLE_KEY');
     return createClient(url, key, {
       auth: {
-        persistSession: false, // Backend only - não precisa persistir sessão
+        persistSession: false,
       },
     });
   },

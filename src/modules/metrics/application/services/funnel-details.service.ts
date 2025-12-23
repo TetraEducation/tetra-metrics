@@ -18,7 +18,6 @@ export class FunnelDetailsService {
    */
   async getFunnelDetails(funnelId: string): Promise<FunnelDetailsResponse> {
     try {
-      // Get funnel info
       const { data: funnel, error: funnelError } = await this.supabase
         .from('funnels')
         .select('id, name')
@@ -29,7 +28,6 @@ export class FunnelDetailsService {
         throw new NotFoundException(`Funnel with ID ${funnelId} not found`);
       }
 
-      // Get source system from alias
       const { data: alias } = await this.supabase
         .from('funnel_aliases')
         .select('source_system')

@@ -29,7 +29,6 @@ function parseArgs(): SyncOptions {
 async function run() {
   const options = parseArgs();
 
-  // Validação de flags conflitantes
   if (options.onlyContacts && options.onlyDeals) {
     logger.error('❌ Erro: --only-contacts e --only-deals não podem ser usados juntos');
     process.exit(1);
@@ -45,7 +44,6 @@ async function run() {
     process.exit(1);
   }
 
-  // Resolver flags finais
   const finalOptions = {
     dryRun: options.dryRun,
     skipContacts: options.skipContacts || options.onlyDeals,

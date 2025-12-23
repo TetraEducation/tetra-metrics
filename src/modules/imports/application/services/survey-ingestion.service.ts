@@ -45,7 +45,7 @@ export class SurveyIngestionService {
     if (dryRun) {
       let responsesCount = 0;
       for (const processedRow of processedRows) {
-        if (!processedRow.leadId) continue; // Só conta se tiver lead
+        if (!processedRow.leadId) continue;
         for (const question of surveyInference.questionColumns) {
           const answer = normalizeText(processedRow.rowData[question.key]);
           if (answer) {
@@ -62,14 +62,12 @@ export class SurveyIngestionService {
       };
     }
 
-    // 1. Garantir form_schema existe
     const formName = tagKey.trim();
     const formNameNormalized = formName.toLowerCase().replace(/[^a-z0-9]+/g, '-');
     const formSourceRef = `file:${fileHash}`;
 
     let formSchemaId: string | null = null;
 
-    // Buscar form_schema existente
     const existingSchema = await this.supabase
       .from('form_schemas')
       .select('id')
@@ -82,7 +80,6 @@ export class SurveyIngestionService {
     } else if (existingSchema.data) {
       formSchemaId = existingSchema.data.id;
     } else {
-      // Criar novo form_schema
       const schemaInsert = await this.supabase
         .from('form_schemas')
         .insert({
@@ -107,15 +104,14 @@ export class SurveyIngestionService {
       throw new Error('Falha ao obter/criar form_schema');
     }
 
-    // 2. Garantir form_questions existem (batch upsert)
-    const questionsMap = new Map<string, string>(); // question_key_normalized -> question_id
+    const questionsMap = new Map<string, string>();
 
     const questionsToUpsert = surveyInference.questionColumns.map((q, index) => ({
       form_schema_id: formSchemaId!,
       key: normalizeKey(q.header),
       label: q.header,
       position: index + 1,
-      data_type: 'text', // Por padrão, inferimos como texto
+      data_type: 'text',
       meta: {},
     }));
 
@@ -139,7 +135,6 @@ export class SurveyIngestionService {
       `✅ [SURVEY] ${questionsMap.size} perguntas garantidas para form_schema ${formSchemaId}`,
     );
 
-    // 3. Inserir form_submissions e form_answers em batch
     const BATCH_SIZE = 100;
     const submissionsToInsert: Array<{
       form_schema_id: string;
@@ -159,9 +154,8 @@ export class SurveyIngestionService {
       value_json: unknown | null;
     }> = [];
 
-    const submissionIdMap = new Map<string, string>(); // dedupe_key -> submission_id
+    const submissionIdMap = new Map<string, string>();
 
-    // Primeiro, criar submissions
     for (const processedRow of processedRows) {
       const dedupeKey = `${fileHash}:${processedRow.rowNumber}`;
       const sourceRef = `row:${processedRow.rowNumber}`;
@@ -176,7 +170,6 @@ export class SurveyIngestionService {
       });
     }
 
-    // Inserir submissions em batch
     let submissionsSaved = 0;
     for (let i = 0; i < submissionsToInsert.length; i += BATCH_SIZE) {
       const chunk = submissionsToInsert.slice(i, i + BATCH_SIZE);
@@ -185,7 +178,6 @@ export class SurveyIngestionService {
         .upsert(chunk, { onConflict: 'form_schema_id,dedupe_key' })
         .select('id, dedupe_key');
 
-      // Sempre buscar os IDs, mesmo se o upsert não retornar (pode ser duplicata)
       const dedupeKeys = chunk.map((s) => s.dedupe_key);
       const existing = await this.supabase
         .from('form_submissions')
@@ -201,7 +193,6 @@ export class SurveyIngestionService {
       }
 
       if (result.error) {
-        // Se houver erro mas conseguimos buscar os existentes, está ok
         if (
           !result.error.message?.includes('duplicate key') &&
           !result.error.message?.includes('unique constraint')
@@ -209,14 +200,12 @@ export class SurveyIngestionService {
           this.logger.error(`Erro ao inserir submissions: ${result.error.message}`);
         }
       } else if (result.data) {
-        // Se o upsert retornou dados, também adicionar ao map (pode ter novos + atualizados)
         for (const sub of result.data) {
           submissionIdMap.set(sub.dedupe_key, sub.id);
         }
       }
     }
 
-    // Agora criar answers para cada submission
     for (const processedRow of processedRows) {
       const dedupeKey = `${fileHash}:${processedRow.rowNumber}`;
       const submissionId = submissionIdMap.get(dedupeKey);
@@ -229,7 +218,7 @@ export class SurveyIngestionService {
       for (const question of surveyInference.questionColumns) {
         const answerValue = processedRow.rowData[question.key];
         if (answerValue === null || answerValue === undefined || answerValue === '') {
-          continue; // Ignora respostas vazias
+          continue;
         }
 
         const questionKeyNormalized = normalizeKey(question.header);
@@ -242,13 +231,11 @@ export class SurveyIngestionService {
           continue;
         }
 
-        // Inferir tipo e valor
         const answerText = normalizeText(answerValue);
         let valueNumber: number | null = null;
         let valueBool: boolean | null = null;
         let valueJson: unknown | null = null;
 
-        // Tentar inferir tipo
         if (typeof answerValue === 'number') {
           valueNumber = answerValue;
         } else if (typeof answerValue === 'boolean') {
@@ -277,7 +264,6 @@ export class SurveyIngestionService {
       }
     }
 
-    // Inserir answers em batch
     let answersSaved = 0;
     for (let i = 0; i < answersToInsert.length; i += BATCH_SIZE) {
       const chunk = answersToInsert.slice(i, i + BATCH_SIZE);
@@ -287,7 +273,6 @@ export class SurveyIngestionService {
         .select('id');
 
       if (result.error) {
-        // Ignora erros de duplicata (idempotência)
         if (
           result.error.message?.includes('duplicate key') ||
           result.error.message?.includes('unique constraint')
@@ -305,7 +290,6 @@ export class SurveyIngestionService {
       `✅ [SURVEY] ${submissionsSaved} submissions e ${answersSaved} answers salvas para ${questionsMap.size} perguntas`,
     );
 
-    // 4. Criar eventos opcionais (survey.imported por lead)
     const leadsWithSubmissions = new Set(
       processedRows.filter((r) => r.leadId).map((r) => r.leadId!),
     );
@@ -331,7 +315,7 @@ export class SurveyIngestionService {
 
     return {
       questionsCount: questionsMap.size,
-      responsesSaved: answersSaved, // answersSaved é o número de respostas salvas
+      responsesSaved: answersSaved,
     };
   }
 }

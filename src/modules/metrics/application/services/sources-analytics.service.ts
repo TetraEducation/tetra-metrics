@@ -20,14 +20,10 @@ export class SourcesAnalyticsService {
     private readonly alertsService: AlertsService,
   ) {}
 
-  /**
-   * Get list of sources with summary (without details)
-   */
   async getSourcesList(): Promise<SourcesListResponse> {
     try {
       const analytics = await this.funnelAnalytics.getFunnelAnalytics();
 
-      // Group funnels by source_system
       const sourcesMap = new Map<string, SourceSummary>();
 
       for (const funnel of analytics.funnels) {
@@ -58,7 +54,6 @@ export class SourcesAnalyticsService {
         sourceSummary.funnelsCount += 1;
       }
 
-      // Calculate metrics for each source
       const sources: SourceSummary[] = [];
 
       for (const [source, summary] of sourcesMap.entries()) {
@@ -68,13 +63,10 @@ export class SourcesAnalyticsService {
             ? (summary.summary.wonDeals / summary.summary.totalLeads) * 100
             : 0;
 
-        // Calculate average time (simplified - could be improved)
         const avgTime = await this.calculateAvgTimeForSource(source, analytics.funnels);
 
-        // Calculate loss rate
         const lossRate = totalClosed > 0 ? (summary.summary.lostDeals / totalClosed) * 100 : 0;
 
-        // Calculate health score
         const healthScore = this.healthScoreService.calculateHealthScore(
           conversionRate,
           avgTime,
@@ -85,7 +77,6 @@ export class SourcesAnalyticsService {
         summary.summary.avgTime = avgTime;
         summary.summary.healthScore = healthScore;
 
-        // Generate alerts to count them
         const alerts = this.alertsService.generateAlerts({
           conversionRate,
           totalLeads: summary.summary.totalLeads,
@@ -99,7 +90,6 @@ export class SourcesAnalyticsService {
         sources.push(summary);
       }
 
-      // Sort by health score (worst first)
       sources.sort((a, b) => a.summary.healthScore - b.summary.healthScore);
 
       return { sources };
@@ -111,17 +101,12 @@ export class SourcesAnalyticsService {
     }
   }
 
-  /**
-   * Get details for a specific source
-   */
   async getSourceDetails(
     sourceSystem: string,
     includeStages = false,
   ): Promise<SourceDetailsResponse> {
     try {
       const analytics = await this.funnelAnalytics.getFunnelAnalytics(sourceSystem);
-
-      // Aggregate metrics for the source
       let totalLeads = 0;
       let activeDeals = 0;
       let wonDeals = 0;
@@ -155,7 +140,6 @@ export class SourcesAnalyticsService {
         healthScore,
       };
 
-      // Generate alerts
       const alerts = this.alertsService.generateAlerts({
         conversionRate,
         totalLeads,
@@ -165,7 +149,6 @@ export class SourcesAnalyticsService {
         source: sourceSystem,
       });
 
-      // Add stage alerts if includeStages
       if (includeStages) {
         const allStages: Array<{
           avg_time_in_stage_hours: number | null;
@@ -193,7 +176,6 @@ export class SourcesAnalyticsService {
         alerts.push(...stageAlerts);
       }
 
-      // Build funnels list
       const funnels: FunnelSummary[] = analytics.funnels.map((funnel) => {
         const funnelSummary: FunnelSummary = {
           funnel_id: funnel.funnel_id,

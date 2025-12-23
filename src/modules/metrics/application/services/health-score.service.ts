@@ -12,14 +12,10 @@ export class HealthScoreService {
   calculateHealthScore(conversionRate: number, avgTime: number, lossRate: number): number {
     let score = 100;
 
-    // Penalidade por conversão baixa
-    // Se conversão < 20%, penaliza progressivamente
     score -= Math.max(0, 100 - conversionRate * 5);
 
-    // Penalidade por tempo alto (cada 10h = -1 ponto, máximo -30)
     score -= Math.min(30, avgTime / 10);
 
-    // Penalidade por perda alta (cada 5% = -1 ponto, máximo -20)
     score -= Math.min(20, lossRate / 5);
 
     return Math.max(0, Math.min(100, Math.round(score)));
