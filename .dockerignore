@@ -1,0 +1,80 @@
+# Dependências (já instaladas no container)
+node_modules
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build output (será gerado no container)
+dist
+build
+coverage
+.nyc_output
+
+# Dumps do banco de dados (17GB+)
+dumps/
+*.sql
+*.sql.gz
+*.dump
+*.backup
+*.bak
+
+# Arquivos de ambiente
+.env
+.env.*
+!.env.example
+
+# Logs
+logs
+*.log
+
+# Arquivos temporários
+.temp
+.tmp
+*.pid
+*.seed
+*.pid.lock
+
+# Planilhas e arquivos de dados
+folders/
+not-import/
+*.xlsx
+*.csv
+*.xls
+processed-leads.csv
+
+# Arquivos temporários de planilhas
+**/.~lock.*
+**/*.lock.*
+
+# Git
+.git
+.gitignore
+.gitattributes
+
+# IDEs
+.idea
+.vscode
+.project
+.classpath
+*.launch
+.settings
+*.sublime-workspace
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Scripts de desenvolvimento (não necessários no container)
+scripts/
+
+# Documentação (opcional, pode remover se quiser)
+*.md
+!README.md
+
+# Testes
+**/*.test.ts
+**/*.spec.ts
+**/__tests__/
+**/__mocks__/
+
