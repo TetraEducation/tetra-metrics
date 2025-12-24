@@ -26,3 +26,4 @@ export function normalizeKey(input: string): string {
     .replace(/(^-|-$)+/g, '') 
     .replace(/-+/g, '-'); 
 }
+

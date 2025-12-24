@@ -71,4 +71,11 @@ processed-leads.csv
 # Dumps do banco de dados (manter README mas ignorar os dumps)
 dumps/*.sql
 dumps/*.sql.gz
+dumps/dumps_chunks/
 !dumps/README.md
+
+# Arquivos de backup e dump
+*.dump
+*.backup
+*.bak
+*.sql.bak

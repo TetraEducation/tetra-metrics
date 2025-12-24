@@ -12,3 +12,4 @@ export interface LeadIdentifier {
   type: LeadIdentifierType;
   valueNorm: string;
 }
+

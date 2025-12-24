@@ -173,36 +173,39 @@ export class SurveyIngestionService {
     let submissionsSaved = 0;
     for (let i = 0; i < submissionsToInsert.length; i += BATCH_SIZE) {
       const chunk = submissionsToInsert.slice(i, i + BATCH_SIZE);
-      const result = await this.supabase
-        .from('form_submissions')
-        .upsert(chunk, { onConflict: 'form_schema_id,dedupe_key' })
-        .select('id, dedupe_key');
+      const dedupeKeys = chunk.map((s) => s.dedupe_key).filter((k): k is string => k !== null && k !== undefined);
 
-      const dedupeKeys = chunk.map((s) => s.dedupe_key);
-      const existing = await this.supabase
-        .from('form_submissions')
-        .select('id, dedupe_key')
-        .eq('form_schema_id', formSchemaId!)
-        .in('dedupe_key', dedupeKeys);
-
-      if (existing.data) {
-        for (const sub of existing.data) {
-          submissionIdMap.set(sub.dedupe_key, sub.id);
-        }
-        submissionsSaved += existing.data.length;
+      if (dedupeKeys.length === 0) {
+        continue;
       }
 
-      if (result.error) {
-        if (
-          !result.error.message?.includes('duplicate key') &&
-          !result.error.message?.includes('unique constraint')
-        ) {
-          this.logger.error(`Erro ao inserir submissions: ${result.error.message}`);
+      const rpcResult = await this.supabase.rpc('upsert_form_submissions', {
+        p_submissions: chunk,
+      });
+
+      if (rpcResult.error) {
+        this.logger.error(`Erro ao fazer upsert de submissions: ${rpcResult.error.message}`);
+        const existing = await this.supabase
+          .from('form_submissions')
+          .select('id, dedupe_key')
+          .eq('form_schema_id', formSchemaId!)
+          .in('dedupe_key', dedupeKeys);
+
+        if (existing.data) {
+          for (const sub of existing.data) {
+            if (sub.dedupe_key) {
+              submissionIdMap.set(sub.dedupe_key, sub.id);
+            }
+          }
+          submissionsSaved += existing.data.length;
         }
-      } else if (result.data) {
-        for (const sub of result.data) {
-          submissionIdMap.set(sub.dedupe_key, sub.id);
+      } else if (rpcResult.data && Array.isArray(rpcResult.data)) {
+        for (const sub of rpcResult.data) {
+          if (sub.dedupe_key && sub.id) {
+            submissionIdMap.set(sub.dedupe_key, sub.id);
+          }
         }
+        submissionsSaved += rpcResult.data.length;
       }
     }
 

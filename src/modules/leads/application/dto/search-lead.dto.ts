@@ -13,3 +13,4 @@ export class SearchLeadDto {
   @IsString()
   phone?: string;
 }
+

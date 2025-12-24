@@ -3,3 +3,4 @@ export interface InferredColumns {
   fullNameKey: string | null;
   phoneKey: string | null;
 }
+

@@ -5,3 +5,4 @@ export const COLUMN_INFERENCE = Symbol('COLUMN_INFERENCE');
 export interface ColumnInferencePort {
   infer(headers: string[], rows: Array<Record<string, unknown>>): InferredColumns;
 }
+

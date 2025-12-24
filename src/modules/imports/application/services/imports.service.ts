@@ -17,6 +17,7 @@ import {
   normalizeEmail,
   normalizeText,
 } from '@/modules/imports/application/utils/normalize';
+import { chooseBetterName } from '@/modules/clint/application/utils/name-validator';
 
 export interface RunImportParams {
   fileBuffer: Buffer;
@@ -131,7 +132,7 @@ export class ImportsService {
           return null;
         }
 
-        const fullName = inferred.fullNameKey ? normalizeText(row[inferred.fullNameKey]) : null;
+        let fullName = inferred.fullNameKey ? normalizeText(row[inferred.fullNameKey]) : null;
         const phone = inferred.phoneKey ? normalizeText(row[inferred.phoneKey]) : null;
         const sourceRef = `${fileHash}:${rowNumber}`;
 
@@ -154,6 +155,36 @@ export class ImportsService {
         }
 
         try {
+          // Buscar lead existente para comparar nomes
+          if (fullName) {
+            const existingLeadRes = await this.supabase
+              .from('lead_identifiers')
+              .select('lead_id')
+              .eq('type', 'email')
+              .eq('value_normalized', emailNorm)
+              .maybeSingle();
+
+            if (existingLeadRes.data?.lead_id) {
+              const leadInfo = await this.supabase
+                .from('leads')
+                .select('full_name')
+                .eq('id', existingLeadRes.data.lead_id)
+                .maybeSingle();
+
+              const existingName = leadInfo.data?.full_name || null;
+              const bestName = chooseBetterName(existingName, fullName);
+
+              if (bestName && bestName !== existingName) {
+                fullName = bestName;
+                if (chunkStart === 0 && chunkIndex < 5) {
+                  this.logger.debug(
+                    `Nome melhorado: "${existingName}" → "${bestName}" (email: ${emailNorm})`,
+                  );
+                }
+              }
+            }
+          }
+
           const rpcParams = {
             p_email_raw: emailRaw,
             p_full_name: fullName,

@@ -10,3 +10,4 @@ export class ClintSyncController {
     return this.service.run({ dryRun: dryRun === 'true' });
   }
 }
+
