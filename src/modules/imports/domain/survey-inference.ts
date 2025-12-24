@@ -4,5 +4,3 @@ export interface SurveyInference {
     key: string;
   }>;
 }
-
-

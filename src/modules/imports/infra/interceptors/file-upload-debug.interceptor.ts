@@ -8,8 +8,7 @@ export class FileUploadDebugInterceptor implements NestInterceptor {
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
     const request = context.switchToHttp().getRequest();
-    
-    // Log detalhado da requisição
+
     this.logger.debug('=== REQUEST DEBUG ===');
     this.logger.debug(`Method: ${request.method}`);
     this.logger.debug(`URL: ${request.url}`);
@@ -28,7 +27,4 @@ export class FileUploadDebugInterceptor implements NestInterceptor {
     );
   }
 }
-
-
-
 

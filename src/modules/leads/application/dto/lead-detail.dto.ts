@@ -80,4 +80,3 @@ export interface LeadDetailDto {
   }>;
 }
 
-

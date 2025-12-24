@@ -3,6 +3,3 @@ export interface AuthenticatedUser {
   email: string | null;
   raw: unknown;
 }
-
-
-

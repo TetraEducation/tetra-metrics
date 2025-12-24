@@ -12,14 +12,14 @@ export class LeadsSearchService {
   constructor(@Inject(LEADS_REPOSITORY) private readonly leadsRepo: LeadsRepositoryPort) {}
 
   async searchLead(params: SearchLeadDto): Promise<LeadDetailDto> {
-    // Validar que pelo menos um parâmetro foi fornecido
     if (!params.name && !params.email && !params.phone) {
-      throw new NotFoundException('É necessário fornecer pelo menos um parâmetro de busca (name, email ou phone)');
+      throw new NotFoundException(
+        'É necessário fornecer pelo menos um parâmetro de busca (name, email ou phone)',
+      );
     }
 
     this.logger.debug(`Buscando lead com parâmetros: ${JSON.stringify(params)}`);
 
-    // Buscar lead_id pelos parâmetros fornecidos
     const leadId = await this.leadsRepo.findLeadBySearch({
       name: params.name,
       email: params.email,
@@ -32,10 +32,8 @@ export class LeadsSearchService {
 
     this.logger.debug(`Lead encontrado: ${leadId}`);
 
-    // Buscar detalhes completos do lead
     const leadDetail = await this.leadsRepo.getLeadDetailById(leadId);
 
     return leadDetail as LeadDetailDto;
   }
 }
-

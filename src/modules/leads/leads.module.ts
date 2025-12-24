@@ -22,10 +22,11 @@ import { SupabaseLeadsRepository } from '@/modules/leads/infra/repositories/supa
     },
   ],
   controllers: [LeadsController],
-  exports: [LeadsImportService, LeadsConsolidationService, LeadsSearchService, FunnelAnalyticsService],
+  exports: [
+    LeadsImportService,
+    LeadsConsolidationService,
+    LeadsSearchService,
+    FunnelAnalyticsService,
+  ],
 })
 export class LeadsModule {}
-
-
-
-

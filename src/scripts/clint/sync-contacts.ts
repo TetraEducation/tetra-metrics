@@ -16,7 +16,7 @@ interface SyncOptions {
 
 function parseArgs(): SyncOptions {
   const args = process.argv.slice(2);
-  
+
   return {
     dryRun: args.includes('--dry-run'),
     skipContacts: args.includes('--skip-contacts'),
@@ -28,24 +28,22 @@ function parseArgs(): SyncOptions {
 
 async function run() {
   const options = parseArgs();
-  
-  // Validação de flags conflitantes
+
   if (options.onlyContacts && options.onlyDeals) {
     logger.error('❌ Erro: --only-contacts e --only-deals não podem ser usados juntos');
     process.exit(1);
   }
-  
+
   if (options.onlyContacts && options.skipContacts) {
     logger.error('❌ Erro: --only-contacts e --skip-contacts não podem ser usados juntos');
     process.exit(1);
   }
-  
+
   if (options.onlyDeals && options.skipDeals) {
     logger.error('❌ Erro: --only-deals e --skip-deals não podem ser usados juntos');
     process.exit(1);
   }
 
-  // Resolver flags finais
   const finalOptions = {
     dryRun: options.dryRun,
     skipContacts: options.skipContacts || options.onlyDeals,
@@ -53,7 +51,9 @@ async function run() {
   };
 
   logger.log('🚀 Iniciando sincronização do Clint...');
-  logger.log(`📋 Opções: dryRun=${finalOptions.dryRun}, skipContacts=${finalOptions.skipContacts}, skipDeals=${finalOptions.skipDeals}`);
+  logger.log(
+    `📋 Opções: dryRun=${finalOptions.dryRun}, skipContacts=${finalOptions.skipContacts}, skipDeals=${finalOptions.skipDeals}`,
+  );
 
   const ctx = await NestFactory.createApplicationContext(AppModule, {
     logger: ['error', 'warn', 'log', 'debug'],
@@ -63,7 +63,7 @@ async function run() {
 
   try {
     const report = await clintSyncService.run(finalOptions);
-    
+
     logger.log('');
     logger.log('═══════════════════════════════════════════════');
     logger.log('✅ SINCRONIZAÇÃO CONCLUÍDA');
@@ -76,7 +76,7 @@ async function run() {
     logger.log(`   Leads criados/atualizados: ${report.totals.leadsUpserted}`);
     logger.log(`   Lead tags vinculadas: ${report.totals.leadTagsLinked}`);
     logger.log(`   Funnel entries criadas/atualizadas: ${report.totals.funnelEntriesUpserted}`);
-    
+
     if (report.warnings.length > 0) {
       logger.warn('');
       logger.warn('⚠️  AVISOS:');
@@ -84,15 +84,17 @@ async function run() {
         logger.warn(`   ${warning}`);
       }
     }
-    
+
     if (report.errors.length > 0) {
       logger.error('');
       logger.error('❌ ERROS:');
       for (const error of report.errors) {
-        logger.error(`   [${error.type}] ${error.error} (status: ${error.status}, page: ${error.page}, HTTP: ${error.statusCode})`);
+        logger.error(
+          `   [${error.type}] ${error.error} (status: ${error.status}, page: ${error.page}, HTTP: ${error.statusCode})`,
+        );
       }
     }
-    
+
     logger.log('═══════════════════════════════════════════════');
   } catch (error) {
     logger.error(`❌ Erro durante sincronização: ${(error as Error).message}`);

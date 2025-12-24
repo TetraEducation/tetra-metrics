@@ -18,7 +18,6 @@ export class FunnelAnalyticsService {
    * Get analytics for all funnels with stage breakdown and bottleneck identification
    */
   async getFunnelAnalytics(sourceSystem?: string): Promise<FunnelAnalyticsListDto> {
-    // 1. Get all funnels
     const funnelsQuery = this.supabase
       .from('funnels')
       .select('id, key, name, created_at')
@@ -45,13 +44,12 @@ export class FunnelAnalyticsService {
       };
     }
 
-    // 2. Get funnel aliases to identify source systems
     const { data: aliases, error: aliasesError } = await this.supabase
       .from('funnel_aliases')
       .select('funnel_id, source_system, source_key')
       .in(
         'funnel_id',
-        funnels.map((f) => f.id)
+        funnels.map((f) => f.id),
       );
 
     if (aliasesError) {
@@ -66,7 +64,6 @@ export class FunnelAnalyticsService {
       });
     });
 
-    // 3. Process each funnel
     const funnelAnalytics: FunnelAnalyticsDto[] = [];
     let globalTotalLeads = 0;
     let globalTotalActive = 0;
@@ -76,12 +73,15 @@ export class FunnelAnalyticsService {
     for (const funnel of funnels) {
       const alias = aliasMap.get(funnel.id);
 
-      // Skip if filtering by source system and doesn't match
       if (sourceSystem && alias?.source_system !== sourceSystem) {
         continue;
       }
 
-      const analytics = await this.analyzeFunnel(funnel.id, funnel.name, alias?.source_system ?? 'unknown');
+      const analytics = await this.analyzeFunnel(
+        funnel.id,
+        funnel.name,
+        alias?.source_system ?? 'unknown',
+      );
 
       if (analytics) {
         funnelAnalytics.push(analytics);
@@ -92,9 +92,7 @@ export class FunnelAnalyticsService {
       }
     }
 
-    // 4. Calculate global stats
-    const avgConversionRate =
-      globalTotalLeads > 0 ? (globalTotalWon / globalTotalLeads) * 100 : 0;
+    const avgConversionRate = globalTotalLeads > 0 ? (globalTotalWon / globalTotalLeads) * 100 : 0;
 
     return {
       funnels: funnelAnalytics,
@@ -115,25 +113,20 @@ export class FunnelAnalyticsService {
   private async analyzeFunnel(
     funnelId: string,
     funnelName: string,
-    sourceSystem: string
+    sourceSystem: string,
   ): Promise<FunnelAnalyticsDto | null> {
     try {
-      // Get all entries for this funnel
       const { data: entries, error: entriesError } = await this.supabase
         .from('lead_funnel_entries')
         .select('id, lead_id, current_stage_id, status, first_seen_at, last_seen_at')
         .eq('funnel_id', funnelId);
 
       if (entriesError) {
-        this.logger.error(
-          `Error fetching entries for funnel ${funnelId}: ${entriesError.message}`
-        );
+        this.logger.error(`Error fetching entries for funnel ${funnelId}: ${entriesError.message}`);
         return null;
       }
 
-      const totalLeads = entries?.length ?? 0;
-      if (totalLeads === 0) {
-        // Return empty analytics for funnels with no data
+      if (!entries || entries.length === 0) {
         return {
           funnel_id: funnelId,
           funnel_name: funnelName,
@@ -149,12 +142,13 @@ export class FunnelAnalyticsService {
         };
       }
 
-      // Count by status
+      const uniqueLeadIds = new Set(entries.map((e) => e.lead_id));
+      const totalLeads = uniqueLeadIds.size;
+
       const activeDeals = entries.filter((e) => e.status === 'open').length;
       const wonDeals = entries.filter((e) => e.status === 'won').length;
       const lostDeals = entries.filter((e) => e.status === 'lost').length;
 
-      // Get stages for this funnel
       const { data: stages, error: stagesError } = await this.supabase
         .from('funnel_stages')
         .select('id, key, name, position')
@@ -165,7 +159,6 @@ export class FunnelAnalyticsService {
         this.logger.error(`Error fetching stages for funnel ${funnelId}: ${stagesError.message}`);
       }
 
-      // Analyze each stage
       const stageAnalytics: StageAnalyticsDto[] = [];
       const sortedStages = (stages ?? []).sort((a, b) => a.position - b.position);
 
@@ -178,7 +171,7 @@ export class FunnelAnalyticsService {
           stage.name,
           stage.position,
           nextStage?.id ?? null,
-          entries
+          entries,
         );
 
         if (stageStats) {
@@ -186,13 +179,11 @@ export class FunnelAnalyticsService {
         }
       }
 
-      // Find last activity
       const lastActivity = entries.reduce<string | null>((latest, entry) => {
         if (!latest) return entry.last_seen_at;
         return entry.last_seen_at > latest ? entry.last_seen_at : latest;
       }, null);
 
-      // Calculate overall conversion rate
       const conversionRate = totalLeads > 0 ? (wonDeals / totalLeads) * 100 : 0;
 
       return {
@@ -210,7 +201,7 @@ export class FunnelAnalyticsService {
       };
     } catch (error) {
       this.logger.error(
-        `Error analyzing funnel ${funnelId}: ${error instanceof Error ? error.message : String(error)}`
+        `Error analyzing funnel ${funnelId}: ${error instanceof Error ? error.message : String(error)}`,
       );
       return null;
     }
@@ -228,19 +219,16 @@ export class FunnelAnalyticsService {
       id: string;
       current_stage_id: string | null;
       status: string;
-    }>
+    }>,
   ): Promise<StageAnalyticsDto | null> {
     try {
-      // Count current leads in this stage
       const currentInStage = entries.filter((e) => e.current_stage_id === stageId);
       const currentCount = currentInStage.length;
 
-      // Count by status
       const openCount = currentInStage.filter((e) => e.status === 'open').length;
       const wonCount = currentInStage.filter((e) => e.status === 'won').length;
       const lostCount = currentInStage.filter((e) => e.status === 'lost').length;
 
-      // Get transitions TO this stage (to count total entries)
       const { data: transitionsTo, error: transitionsToError } = await this.supabase
         .from('lead_funnel_transitions')
         .select('id, lead_funnel_entry_id, occurred_at')
@@ -248,13 +236,17 @@ export class FunnelAnalyticsService {
 
       if (transitionsToError) {
         this.logger.error(
-          `Error fetching transitions to stage ${stageId}: ${transitionsToError.message}`
+          `Error fetching transitions to stage ${stageId}: ${transitionsToError.message}`,
         );
       }
 
-      const totalEntries = (transitionsTo?.length ?? 0) + currentCount;
+      const uniqueEntryIdsInTransitions = new Set(
+        transitionsTo?.map((t) => t.lead_funnel_entry_id) ?? [],
+      );
 
-      // Get transitions FROM this stage to calculate avg time and conversion
+      const totalEntries =
+        uniqueEntryIdsInTransitions.size > 0 ? uniqueEntryIdsInTransitions.size : currentCount;
+
       const { data: transitionsFrom, error: transitionsFromError } = await this.supabase
         .from('lead_funnel_transitions')
         .select('id, lead_funnel_entry_id, from_stage_id, to_stage_id, occurred_at')
@@ -262,21 +254,21 @@ export class FunnelAnalyticsService {
 
       if (transitionsFromError) {
         this.logger.error(
-          `Error fetching transitions from stage ${stageId}: ${transitionsFromError.message}`
+          `Error fetching transitions from stage ${stageId}: ${transitionsFromError.message}`,
         );
       }
 
-      // Calculate average time in stage
       let avgTimeInStageHours: number | null = null;
       if (transitionsTo && transitionsFrom && transitionsTo.length > 0) {
         const timeDiffs: number[] = [];
 
         for (const transTo of transitionsTo) {
           const transFrom = transitionsFrom.find(
-            (tf) => tf.lead_funnel_entry_id === transTo.lead_funnel_entry_id
+            (tf) => tf.lead_funnel_entry_id === transTo.lead_funnel_entry_id,
           );
           if (transFrom) {
-            const timeInMs = new Date(transFrom.occurred_at).getTime() - new Date(transTo.occurred_at).getTime();
+            const timeInMs =
+              new Date(transFrom.occurred_at).getTime() - new Date(transTo.occurred_at).getTime();
             const timeInHours = timeInMs / (1000 * 60 * 60);
             if (timeInHours >= 0) {
               timeDiffs.push(timeInHours);
@@ -290,7 +282,6 @@ export class FunnelAnalyticsService {
         }
       }
 
-      // Calculate conversion to next stage
       let conversionToNext: number | null = null;
       if (nextStageId && transitionsFrom) {
         const transitionsToNext = transitionsFrom.filter((t) => t.to_stage_id === nextStageId);
@@ -300,16 +291,12 @@ export class FunnelAnalyticsService {
         }
       }
 
-      // Calculate loss rate (lost / total_entries)
       const lossRate = totalEntries > 0 ? Math.round((lostCount / totalEntries) * 10000) / 100 : 0;
-      
-      // Calculate win rate (won / total_entries)
+
       const winRate = totalEntries > 0 ? Math.round((wonCount / totalEntries) * 10000) / 100 : 0;
-      
-      // Convert hours to days for better readability
-      const avgTimeInStageDays = avgTimeInStageHours !== null 
-        ? Math.round((avgTimeInStageHours / 24) * 100) / 100 
-        : null;
+
+      const avgTimeInStageDays =
+        avgTimeInStageHours !== null ? Math.round((avgTimeInStageHours / 24) * 100) / 100 : null;
 
       return {
         stage_id: stageId,
@@ -330,10 +317,9 @@ export class FunnelAnalyticsService {
       };
     } catch (error) {
       this.logger.error(
-        `Error analyzing stage ${stageId}: ${error instanceof Error ? error.message : String(error)}`
+        `Error analyzing stage ${stageId}: ${error instanceof Error ? error.message : String(error)}`,
       );
       return null;
     }
   }
 }
-

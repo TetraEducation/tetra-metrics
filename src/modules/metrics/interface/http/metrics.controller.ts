@@ -14,4 +14,3 @@ export class MetricsController {
     return this.whoAmIQuery.execute(req.user);
   }
 }
-

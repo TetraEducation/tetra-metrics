@@ -14,5 +14,3 @@ export class SearchLeadDto {
   phone?: string;
 }
 
-
-

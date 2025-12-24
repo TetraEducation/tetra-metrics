@@ -2,4 +2,3 @@ export enum LEADS_SOURCE {
   CLINT = 'CLINT',
   ACTIVE_CAMPAIGN = 'ACTIVE_CAMPAIGN',
 }
-

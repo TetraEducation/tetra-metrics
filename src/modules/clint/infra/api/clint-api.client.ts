@@ -29,9 +29,8 @@ export class ClintApiClient {
     const all: T[] = [];
     let page = 1;
     let hasNext = true;
-    const limitPages = maxPages ?? Infinity; // Limite de páginas (undefined = todas)
+    const limitPages = maxPages ?? Infinity;
 
-    // A API do Clint retorna: { status, totalCount, page, totalPages, hasNext, hasPrevious, data: [...] }
     while (hasNext && page <= limitPages) {
       const res = await this.http.get(path, { params: { page, limit: 200 } });
       const body = res.data as {
@@ -44,9 +43,8 @@ export class ClintApiClient {
         data?: T[];
       };
 
-      // A API do Clint retorna os dados em body.data
       const items: T[] = body?.data ?? [];
-      
+
       if (!items.length) {
         hasNext = false;
         break;
@@ -58,17 +56,14 @@ export class ClintApiClient {
         `Página ${page}/${body?.totalPages ?? '?'}: ${items.length} itens (total acumulado: ${all.length})`,
       );
 
-      // Usa hasNext da resposta da API do Clint
       hasNext = body?.hasNext === true;
 
-      // Fallback: se não tiver hasNext, verifica se há mais páginas
       if (!hasNext && body?.totalPages && body?.page) {
         hasNext = body.page < body.totalPages;
       }
 
       page++;
 
-      // Safety: evita loop infinito
       if (page > 1000) {
         console.warn(`[ClintApiClient] Limite de 1000 páginas atingido para ${path}`);
         break;
@@ -78,7 +73,11 @@ export class ClintApiClient {
     return all;
   }
 
-  async getPage<T = unknown>(path: string, page: number, limit = 200): Promise<{
+  async getPage<T = unknown>(
+    path: string,
+    page: number,
+    limit = 200,
+  ): Promise<{
     data: T[];
     page: number;
     totalPages: number;
@@ -100,7 +99,7 @@ export class ClintApiClient {
     const totalPages = body?.totalPages ?? 1;
     const totalCount = body?.totalCount ?? items.length;
     const currentPage = body?.page ?? page;
-    const hasNext = body?.hasNext ?? (currentPage < totalPages);
+    const hasNext = body?.hasNext ?? currentPage < totalPages;
 
     return {
       data: items,
@@ -145,4 +144,3 @@ export class ClintApiClient {
     return this.listAll('/lost-status');
   }
 }
-

@@ -12,6 +12,3 @@ export interface SpreadsheetParserPort {
   parse(params: ParseSpreadsheetParams): ParsedSpreadsheet;
 }
 
-
-
-
