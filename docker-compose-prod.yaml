@@ -1,0 +1,18 @@
+services:
+  api:
+    build: .
+    container_name: tetra-metrics-api
+    restart: unless-stopped
+    env_file:
+      - ~/shared/.env
+    networks:
+      - traefik-public
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.tetra-metrics.rule=Host(`api.tetra.localhost`)"
+      - "traefik.http.routers.tetra-metrics.entrypoints=web"
+      - "traefik.http.services.tetra-metrics.loadbalancer.server.port=3333"
+
+networks:
+  traefik-public:
+    external: true
