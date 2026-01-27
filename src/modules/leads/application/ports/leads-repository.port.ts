@@ -1,4 +1,9 @@
 import type { Lead, LeadIdentifier, LeadIdentifierType } from '@/modules/leads/domain/lead';
+import type {
+  LeadListingItem,
+  LeadsListingResult,
+  LeadsListingSearchDto,
+} from '@/modules/leads/application/dto/leads-listing.dto';
 
 export const LEADS_REPOSITORY = Symbol('LEADS_REPOSITORY');
 
@@ -19,4 +24,5 @@ export interface LeadsRepositoryPort {
     phone?: string;
   }): Promise<string | null>;
   getLeadDetailById(leadId: string): Promise<unknown>;
+  listLeads(params: LeadsListingSearchDto): Promise<LeadsListingResult<LeadListingItem>>;
 }
