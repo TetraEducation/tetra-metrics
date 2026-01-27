@@ -3,6 +3,11 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { SUPABASE } from '@/infra/supabase/supabase.provider';
 import type { LeadsRepositoryPort } from '@/modules/leads/application/ports/leads-repository.port';
+import type {
+  LeadListingItem,
+  LeadsListingResult,
+  LeadsListingSearchDto,
+} from '@/modules/leads/application/dto/leads-listing.dto';
 import type { Lead, LeadIdentifier } from '@/modules/leads/domain/lead';
 import { normalizeEmail, normalizeText } from '@/modules/imports/application/utils/normalize';
 
@@ -17,6 +22,18 @@ type LeadIdentifierRow = {
   lead_id: string;
   type: string;
   value_normalized: string;
+};
+
+type LeadListingRow = {
+  id: string;
+  full_name: string | null;
+  last_activity_at: string | null;
+  lead_identifiers?: Array<{
+    type: string;
+    value: string | null;
+    is_primary: boolean | null;
+    created_at: string | null;
+  }>;
 };
 
 @Injectable()
@@ -359,6 +376,67 @@ export class SupabaseLeadsRepository implements LeadsRepositoryPort {
     };
   }
 
+  async listLeads(
+    params: LeadsListingSearchDto,
+  ): Promise<LeadsListingResult<LeadListingItem>> {
+    const page = params.page && params.page > 0 ? params.page : 1;
+    const perPage = params.perPage && params.perPage > 0 ? params.perPage : 20;
+    const orderBy = params.orderBy ?? 'last_activity_at';
+    const orderDirection = params.orderDirection ?? 'desc';
+
+    const leadIdsFilter = await this.resolveLeadIdsByIdentifiers(params);
+    if (leadIdsFilter && leadIdsFilter.length === 0) {
+      return { data: [], page, perPage, total: 0 };
+    }
+
+    let query = this.supabase
+      .from('leads')
+      .select(
+        'id, full_name, last_activity_at, lead_identifiers(type, value, is_primary, created_at)',
+        { count: 'exact' },
+      );
+
+    if (params.name) {
+      const nameSearch = normalizeText(params.name);
+      if (nameSearch) {
+        query = query.ilike('full_name', `%${nameSearch}%`);
+      }
+    }
+
+    if (params.lastActivityFrom) {
+      query = query.gte('last_activity_at', params.lastActivityFrom);
+    }
+
+    if (params.lastActivityTo) {
+      query = query.lte('last_activity_at', params.lastActivityTo);
+    }
+
+    if (leadIdsFilter) {
+      query = query.in('id', leadIdsFilter);
+    }
+
+    const from = (page - 1) * perPage;
+    const to = from + perPage - 1;
+
+    const { data, error, count } = await query
+      .order(orderBy, { ascending: orderDirection === 'asc' })
+      .range(from, to);
+
+    if (error) {
+      throw error;
+    }
+
+    const leads = (data ?? []) as LeadListingRow[];
+    const items = leads.map((lead) => this.mapLeadListing(lead));
+
+    return {
+      data: items,
+      page,
+      perPage,
+      total: count ?? 0,
+    };
+  }
+
   private mapLead(row: LeadRow): Lead {
     return {
       id: row.id,
@@ -374,5 +452,78 @@ export class SupabaseLeadsRepository implements LeadsRepositoryPort {
       type: row.type as LeadIdentifier['type'],
       valueNorm: row.value_normalized,
     };
+  }
+
+  private async resolveLeadIdsByIdentifiers(
+    params: LeadsListingSearchDto,
+  ): Promise<string[] | null> {
+    let leadIds: string[] | null = null;
+
+    if (params.email) {
+      const emailNorm = normalizeEmail(params.email);
+      const { data, error } = await this.supabase
+        .from('lead_identifiers')
+        .select('lead_id')
+        .eq('type', 'email')
+        .eq('value_normalized', emailNorm);
+
+      if (error) throw error;
+      const ids = (data ?? []).map((row) => row.lead_id);
+      leadIds = leadIds ? leadIds.filter((id) => ids.includes(id)) : ids;
+    }
+
+    if (params.phone) {
+      const phoneNorm = params.phone.replace(/\D+/g, '');
+      if (phoneNorm) {
+        const { data, error } = await this.supabase
+          .from('lead_identifiers')
+          .select('lead_id')
+          .eq('type', 'phone')
+          .eq('value_normalized', phoneNorm);
+
+        if (error) throw error;
+        const ids = (data ?? []).map((row) => row.lead_id);
+        leadIds = leadIds ? leadIds.filter((id) => ids.includes(id)) : ids;
+      } else {
+        leadIds = [];
+      }
+    }
+
+    return leadIds;
+  }
+
+  private mapLeadListing(lead: LeadListingRow): LeadListingItem {
+    const identifiers = lead.lead_identifiers ?? [];
+    const email = this.pickIdentifierValue(identifiers, 'email');
+    const phone = this.pickIdentifierValue(identifiers, 'phone');
+
+    return {
+      nome: lead.full_name,
+      email,
+      telefone: phone,
+      ultimoContatoComercial: lead.last_activity_at,
+    };
+  }
+
+  private pickIdentifierValue(
+    identifiers: NonNullable<LeadListingRow['lead_identifiers']>,
+    type: string,
+  ): string | null {
+    const filtered = identifiers.filter((identifier) => identifier.type === type);
+    if (filtered.length === 0) return null;
+
+    const primary = filtered.find((identifier) => identifier.is_primary);
+    if (primary?.value) {
+      return primary.value;
+    }
+
+    const sorted = [...filtered].sort((a, b) => {
+      if (!a.created_at && !b.created_at) return 0;
+      if (!a.created_at) return 1;
+      if (!b.created_at) return -1;
+      return a.created_at.localeCompare(b.created_at);
+    });
+
+    return sorted[0]?.value ?? null;
   }
 }
