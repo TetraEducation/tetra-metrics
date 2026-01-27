@@ -31,6 +31,18 @@ export class LeadsListingSearchDto {
 
   @IsOptional()
   @IsString()
+  campaignTagKey?: string;
+
+  @IsOptional()
+  @IsString()
+  tagId?: string;
+
+  @IsOptional()
+  @IsString()
+  salaryRange?: string;
+
+  @IsOptional()
+  @IsString()
   lastActivityFrom?: string;
 
   @IsOptional()
