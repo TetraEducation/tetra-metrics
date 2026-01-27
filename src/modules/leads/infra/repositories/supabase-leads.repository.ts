@@ -16,7 +16,7 @@ type LeadIdentifierRow = {
   id: string;
   lead_id: string;
   type: string;
-  value_norm: string;
+  value_normalized: string;
 };
 
 @Injectable()
@@ -28,8 +28,8 @@ export class SupabaseLeadsRepository implements LeadsRepositoryPort {
 
     const { data, error } = await this.supabase
       .from('lead_identifiers')
-      .select('id, lead_id, type, value_norm')
-      .in('value_norm', values);
+      .select('id, lead_id, type, value_normalized')
+      .in('value_normalized', values);
 
     if (error) throw error;
     return (data ?? []).map(this.mapIdentifier);
@@ -55,7 +55,7 @@ export class SupabaseLeadsRepository implements LeadsRepositoryPort {
     const payload = identifiers.map((identifier) => ({
       lead_id: leadId,
       type: identifier.type,
-      value_norm: identifier.valueNorm,
+      value_normalized: identifier.valueNorm,
     }));
 
     const { error } = await this.supabase.from('lead_identifiers').insert(payload);
@@ -372,7 +372,7 @@ export class SupabaseLeadsRepository implements LeadsRepositoryPort {
       id: row.id,
       leadId: row.lead_id,
       type: row.type as LeadIdentifier['type'],
-      valueNorm: row.value_norm,
+      valueNorm: row.value_normalized,
     };
   }
 }
