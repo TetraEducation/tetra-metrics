@@ -25,4 +25,5 @@ export interface LeadsRepositoryPort {
   }): Promise<string | null>;
   getLeadDetailById(leadId: string): Promise<unknown>;
   listLeads(params: LeadsListingSearchDto): Promise<LeadsListingResult<LeadListingItem>>;
+  listLeadIds(params: LeadsListingSearchDto): Promise<string[]>;
 }
