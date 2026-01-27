@@ -8,7 +8,7 @@ import { normalizeEmail, normalizeText } from '@/modules/imports/application/uti
 
 type LeadRow = {
   id: string;
-  name: string | null;
+  full_name: string | null;
   created_at: string;
 };
 
@@ -38,8 +38,8 @@ export class SupabaseLeadsRepository implements LeadsRepositoryPort {
   async createLead(payload: { name?: string | null }): Promise<Lead> {
     const { data, error } = await this.supabase
       .from('leads')
-      .insert({ name: payload.name ?? null })
-      .select('id, name, created_at')
+      .insert({ full_name: payload.name ?? null })
+      .select('id, full_name, created_at')
       .single();
 
     if (error || !data) throw error ?? new Error('Failed to create lead');
@@ -65,7 +65,7 @@ export class SupabaseLeadsRepository implements LeadsRepositoryPort {
   async updateLead(id: string, payload: { name?: string | null }): Promise<void> {
     const { error } = await this.supabase
       .from('leads')
-      .update({ name: payload.name ?? null })
+      .update({ full_name: payload.name ?? null })
       .eq('id', id);
     if (error) throw error;
   }
@@ -91,7 +91,7 @@ export class SupabaseLeadsRepository implements LeadsRepositoryPort {
   async getLeadById(id: string): Promise<Lead> {
     const { data, error } = await this.supabase
       .from('leads')
-      .select('id, name, created_at')
+      .select('id, full_name, created_at')
       .eq('id', id)
       .single();
 
@@ -362,7 +362,7 @@ export class SupabaseLeadsRepository implements LeadsRepositoryPort {
   private mapLead(row: LeadRow): Lead {
     return {
       id: row.id,
-      name: row.name,
+      name: row.full_name,
       createdAt: row.created_at,
     };
   }
