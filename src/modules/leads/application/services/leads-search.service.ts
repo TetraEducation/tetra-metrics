@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 
 import type { LeadsRepositoryPort } from '@/modules/leads/application/ports/leads-repository.port';
 import { LEADS_REPOSITORY } from '@/modules/leads/application/ports/leads-repository.port';
@@ -19,6 +19,30 @@ export class LeadsSearchService {
     }
 
     this.logger.debug(`Buscando lead com parâmetros: ${JSON.stringify(params)}`);
+
+    if (params.option) {
+      const selectedValue = params[params.option];
+
+      if (!selectedValue) {
+        throw new BadRequestException(
+          `É necessário informar o parâmetro '${params.option}' quando option=${params.option}`,
+        );
+      }
+
+      const leadId = await this.leadsRepo.findLeadBySearch({
+        [params.option]: selectedValue,
+      });
+
+      if (!leadId) {
+        throw new NotFoundException('Lead não encontrado com os parâmetros fornecidos');
+      }
+
+      this.logger.debug(`Lead encontrado: ${leadId}`);
+
+      const leadDetail = await this.leadsRepo.getLeadDetailById(leadId);
+
+      return leadDetail as LeadDetailDto;
+    }
 
     const leadId = await this.leadsRepo.findLeadBySearch({
       name: params.name,

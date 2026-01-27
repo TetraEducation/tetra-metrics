@@ -24,6 +24,12 @@ export class LeadsController {
   }
 
   @Get('search')
+  /**
+   * Search lead by name, email, or phone.
+   * Optional query param:
+   * - option: define explicit search field (email | phone | name). When provided,
+   *   the corresponding field is required and only it will be used for the search.
+   */
   async search(@Query() query: SearchLeadDto) {
     return this.leadsSearch.searchLead(query);
   }
