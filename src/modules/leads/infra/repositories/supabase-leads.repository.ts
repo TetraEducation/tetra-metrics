@@ -437,6 +437,68 @@ export class SupabaseLeadsRepository implements LeadsRepositoryPort {
     };
   }
 
+  async listLeadIds(params: LeadsListingSearchDto): Promise<string[]> {
+    const orderBy = params.orderBy ?? 'last_activity_at';
+    const orderDirection = params.orderDirection ?? 'desc';
+
+    const leadIdsFilter = await this.resolveLeadIdsByFilters(params);
+    if (leadIdsFilter && leadIdsFilter.length === 0) {
+      return [];
+    }
+
+    let query = this.supabase.from('leads').select('id');
+
+    if (params.name) {
+      const nameSearch = normalizeText(params.name);
+      if (nameSearch) {
+        query = query.ilike('full_name', `%${nameSearch}%`);
+      }
+    }
+
+    if (params.lastActivityFrom) {
+      query = query.gte('last_activity_at', params.lastActivityFrom);
+    }
+
+    if (params.lastActivityTo) {
+      query = query.lte('last_activity_at', params.lastActivityTo);
+    }
+
+    if (leadIdsFilter) {
+      query = query.in('id', leadIdsFilter);
+    }
+
+    query = query.order(orderBy, { ascending: orderDirection === 'asc' });
+
+    const pageSize = 1000;
+    const ids: string[] = [];
+    let page = 0;
+
+    while (true) {
+      const from = page * pageSize;
+      const to = from + pageSize - 1;
+      const { data, error } = await query.range(from, to);
+
+      if (error) {
+        throw error;
+      }
+
+      const chunk = data ?? [];
+      if (chunk.length === 0) {
+        break;
+      }
+
+      ids.push(...chunk.map((row) => row.id));
+
+      if (chunk.length < pageSize) {
+        break;
+      }
+
+      page += 1;
+    }
+
+    return ids;
+  }
+
   private mapLead(row: LeadRow): Lead {
     return {
       id: row.id,

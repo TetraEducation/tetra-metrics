@@ -4,6 +4,7 @@ import { SupabaseModule } from '@/infra/supabase/supabase.module';
 import { LeadsImportService } from '@/modules/leads/application/services/leads-import.service';
 import { LeadsConsolidationService } from '@/modules/leads/application/services/leads-consolidation.service';
 import { LeadsDetailService } from '@/modules/leads/application/services/leads-detail.service';
+import { LeadsExportService } from '@/modules/leads/application/services/leads-export.service';
 import { LeadsSearchService } from '@/modules/leads/application/services/leads-search.service';
 import { FunnelAnalyticsService } from '@/modules/leads/application/services/funnel-analytics.service';
 import { LeadsListingService } from '@/modules/leads/application/services/leads-listing.service';
@@ -19,6 +20,7 @@ import { SupabaseLeadsRepository } from '@/modules/leads/infra/repositories/supa
     LeadsImportService,
     LeadsConsolidationService,
     LeadsDetailService,
+    LeadsExportService,
     LeadsSearchService,
     FunnelAnalyticsService,
     LeadsListingService,
@@ -32,6 +34,7 @@ import { SupabaseLeadsRepository } from '@/modules/leads/infra/repositories/supa
     LeadsImportService,
     LeadsConsolidationService,
     LeadsDetailService,
+    LeadsExportService,
     LeadsSearchService,
     FunnelAnalyticsService,
     LeadsListingService,
