@@ -2,14 +2,14 @@ import { Inject, Injectable } from '@nestjs/common';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { SUPABASE } from '@/infra/supabase/supabase.provider';
-import type { LeadsRepositoryPort } from '@/modules/leads/application/ports/leads-repository.port';
+import { normalizeEmail, normalizeText } from '@/modules/imports/application/utils/normalize';
 import type {
   LeadListingItem,
   LeadsListingResult,
   LeadsListingSearchDto,
 } from '@/modules/leads/application/dto/leads-listing.dto';
+import type { LeadsRepositoryPort } from '@/modules/leads/application/ports/leads-repository.port';
 import type { Lead, LeadIdentifier } from '@/modules/leads/domain/lead';
-import { normalizeEmail, normalizeText } from '@/modules/imports/application/utils/normalize';
 
 type LeadRow = {
   id: string;
@@ -376,25 +376,41 @@ export class SupabaseLeadsRepository implements LeadsRepositoryPort {
     };
   }
 
-  async listLeads(
-    params: LeadsListingSearchDto,
-  ): Promise<LeadsListingResult<LeadListingItem>> {
+  async listLeads(params: LeadsListingSearchDto): Promise<LeadsListingResult<LeadListingItem>> {
     const page = params.page && params.page > 0 ? params.page : 1;
     const perPage = params.perPage && params.perPage > 0 ? params.perPage : 20;
     const orderBy = params.orderBy ?? 'last_activity_at';
     const orderDirection = params.orderDirection ?? 'desc';
+
+    const tagIds = await this.resolveTagIds(params);
+    if (tagIds && tagIds.length === 0) {
+      return { data: [], page, perPage, total: 0 };
+    }
+
+    const salaryQuestionIds = await this.resolveSalaryQuestionIds(params);
+    if (salaryQuestionIds && salaryQuestionIds.length === 0) {
+      return { data: [], page, perPage, total: 0 };
+    }
 
     const leadIdsFilter = await this.resolveLeadIdsByFilters(params);
     if (leadIdsFilter && leadIdsFilter.length === 0) {
       return { data: [], page, perPage, total: 0 };
     }
 
-    let query = this.supabase
-      .from('leads')
-      .select(
-        'id, full_name, last_activity_at, lead_identifiers(type, value, is_primary, created_at)',
-        { count: 'exact' },
-      );
+    const selectParts = [
+      'id',
+      'full_name',
+      'last_activity_at',
+      'lead_identifiers(type, value, is_primary, created_at)',
+    ];
+    if (tagIds) {
+      selectParts.push('lead_tags!inner(tag_id)');
+    }
+    if (salaryQuestionIds) {
+      selectParts.push('form_submissions!inner(id, form_answers!inner(question_id, value_text))');
+    }
+
+    let query = this.supabase.from('leads').select(selectParts.join(', '), { count: 'exact' });
 
     if (params.name) {
       const nameSearch = normalizeText(params.name);
@@ -409,6 +425,18 @@ export class SupabaseLeadsRepository implements LeadsRepositoryPort {
 
     if (params.lastActivityTo) {
       query = query.lte('last_activity_at', params.lastActivityTo);
+    }
+
+    if (tagIds) {
+      query = query.in('lead_tags.tag_id', tagIds);
+    }
+
+    if (salaryQuestionIds) {
+      const raw = params.salaryRange?.trim() ?? '';
+      const pattern = `%${this.escapeLikePattern(raw)}%`;
+      query = query
+        .in('form_submissions.form_answers.question_id', salaryQuestionIds)
+        .ilike('form_submissions.form_answers.value_text', pattern);
     }
 
     if (leadIdsFilter) {
@@ -426,7 +454,7 @@ export class SupabaseLeadsRepository implements LeadsRepositoryPort {
       throw error;
     }
 
-    const leads = (data ?? []) as LeadListingRow[];
+    const leads = (data ?? []) as unknown as LeadListingRow[];
     const items = leads.map((lead) => this.mapLeadListing(lead));
 
     return {
@@ -441,12 +469,30 @@ export class SupabaseLeadsRepository implements LeadsRepositoryPort {
     const orderBy = params.orderBy ?? 'last_activity_at';
     const orderDirection = params.orderDirection ?? 'desc';
 
+    const tagIds = await this.resolveTagIds(params);
+    if (tagIds && tagIds.length === 0) {
+      return [];
+    }
+
+    const salaryQuestionIds = await this.resolveSalaryQuestionIds(params);
+    if (salaryQuestionIds && salaryQuestionIds.length === 0) {
+      return [];
+    }
+
     const leadIdsFilter = await this.resolveLeadIdsByFilters(params);
     if (leadIdsFilter && leadIdsFilter.length === 0) {
       return [];
     }
 
-    let query = this.supabase.from('leads').select('id');
+    const selectParts = ['id'];
+    if (tagIds) {
+      selectParts.push('lead_tags!inner(tag_id)');
+    }
+    if (salaryQuestionIds) {
+      selectParts.push('form_submissions!inner(id, form_answers!inner(question_id, value_text))');
+    }
+
+    let query = this.supabase.from('leads').select(selectParts.join(', '));
 
     if (params.name) {
       const nameSearch = normalizeText(params.name);
@@ -461,6 +507,18 @@ export class SupabaseLeadsRepository implements LeadsRepositoryPort {
 
     if (params.lastActivityTo) {
       query = query.lte('last_activity_at', params.lastActivityTo);
+    }
+
+    if (tagIds) {
+      query = query.in('lead_tags.tag_id', tagIds);
+    }
+
+    if (salaryQuestionIds) {
+      const raw = params.salaryRange?.trim() ?? '';
+      const pattern = `%${this.escapeLikePattern(raw)}%`;
+      query = query
+        .in('form_submissions.form_answers.question_id', salaryQuestionIds)
+        .ilike('form_submissions.form_answers.value_text', pattern);
     }
 
     if (leadIdsFilter) {
@@ -482,7 +540,7 @@ export class SupabaseLeadsRepository implements LeadsRepositoryPort {
         throw error;
       }
 
-      const chunk = data ?? [];
+      const chunk = (data ?? []) as unknown as Array<{ id: string }>;
       if (chunk.length === 0) {
         break;
       }
@@ -516,9 +574,7 @@ export class SupabaseLeadsRepository implements LeadsRepositoryPort {
     };
   }
 
-  private async resolveLeadIdsByFilters(
-    params: LeadsListingSearchDto,
-  ): Promise<string[] | null> {
+  private async resolveLeadIdsByFilters(params: LeadsListingSearchDto): Promise<string[] | null> {
     let leadIds: string[] | null = null;
 
     const applyFilter = (ids: string[]) => {
@@ -555,28 +611,30 @@ export class SupabaseLeadsRepository implements LeadsRepositoryPort {
       }
     }
 
-    const tagIds = await this.resolveLeadIdsByTag(params);
-    if (tagIds) {
-      applyFilter(tagIds);
-    }
-
-    const salaryIds = await this.resolveLeadIdsBySalaryRange(params);
-    if (salaryIds) {
-      applyFilter(salaryIds);
-    }
-
     return leadIds;
   }
 
-  private async resolveLeadIdsByTag(
-    params: LeadsListingSearchDto,
-  ): Promise<string[] | null> {
-    if (!params.campaignTagKey && !params.tagId) return null;
+  private async resolveTagIds(params: LeadsListingSearchDto): Promise<string[] | null> {
+    if (!params.campaignTagKey && !params.tag && !params.tagId && !params.campaignName) return null;
 
     const tagIds = new Set<string>();
 
     if (params.tagId) {
-      tagIds.add(params.tagId);
+      // Defesa extra: se chegar algo não-UUID (ex.: CPB8), ignoramos aqui para não estourar o banco.
+      if (this.isUuid(params.tagId)) {
+        tagIds.add(params.tagId);
+      }
+    }
+
+    if (params.tag) {
+      const tagKey = params.tag.trim();
+      if (tagKey) {
+        const { data, error } = await this.supabase.from('tags').select('id').eq('key', tagKey);
+        if (error) throw error;
+        for (const tag of data ?? []) {
+          tagIds.add(tag.id);
+        }
+      }
     }
 
     if (params.campaignTagKey) {
@@ -591,21 +649,46 @@ export class SupabaseLeadsRepository implements LeadsRepositoryPort {
       }
     }
 
+    if (params.campaignName) {
+      const raw = params.campaignName.trim();
+      if (raw) {
+        const patternRaw = `%${this.escapeLikePattern(raw)}%`;
+        const norm = normalizeText(raw);
+        const patternNorm = norm ? `%${this.escapeLikePattern(norm)}%` : null;
+
+        const tagMatches = new Set<string>();
+
+        const { data: byName, error: byNameError } = await this.supabase
+          .from('tags')
+          .select('id')
+          .ilike('name', patternRaw);
+        if (byNameError) throw byNameError;
+        for (const tag of byName ?? []) tagMatches.add(tag.id);
+
+        const { data: byKey, error: byKeyError } = await this.supabase
+          .from('tags')
+          .select('id')
+          .ilike('key', patternRaw);
+        if (byKeyError) throw byKeyError;
+        for (const tag of byKey ?? []) tagMatches.add(tag.id);
+
+        const { data: byKeyNorm, error: byKeyNormError } = await this.supabase
+          .from('tags')
+          .select('id')
+          .ilike('key_normalized', patternNorm ?? patternRaw);
+        if (byKeyNormError) throw byKeyNormError;
+        for (const tag of byKeyNorm ?? []) tagMatches.add(tag.id);
+
+        for (const id of tagMatches) tagIds.add(id);
+      }
+    }
+
     if (tagIds.size === 0) return [];
 
-    const { data: leadTags, error: leadTagsError } = await this.supabase
-      .from('lead_tags')
-      .select('lead_id')
-      .in('tag_id', [...tagIds]);
-
-    if (leadTagsError) throw leadTagsError;
-
-    return (leadTags ?? []).map((row) => row.lead_id);
+    return [...tagIds];
   }
 
-  private async resolveLeadIdsBySalaryRange(
-    params: LeadsListingSearchDto,
-  ): Promise<string[] | null> {
+  private async resolveSalaryQuestionIds(params: LeadsListingSearchDto): Promise<string[] | null> {
     if (!params.salaryRange) return null;
 
     const { data: questions, error: questionsError } = await this.supabase
@@ -618,65 +701,16 @@ export class SupabaseLeadsRepository implements LeadsRepositoryPort {
     if (questionsError) throw questionsError;
     const questionIds = (questions ?? []).map((question) => question.id);
     if (questionIds.length === 0) return [];
-
-    const salaryFilter = this.parseSalaryRange(params.salaryRange);
-    let answersQuery = this.supabase
-      .from('form_answers')
-      .select('form_submission_id')
-      .in('question_id', questionIds);
-
-    if (salaryFilter.min !== null) {
-      answersQuery = answersQuery.gte('value_number', salaryFilter.min);
-    }
-
-    if (salaryFilter.max !== null) {
-      answersQuery = answersQuery.lte('value_number', salaryFilter.max);
-    }
-
-    if (salaryFilter.min === null && salaryFilter.max === null) {
-      answersQuery = answersQuery.ilike('value_text', params.salaryRange);
-    }
-
-    const { data: answers, error: answersError } = await answersQuery;
-    if (answersError) throw answersError;
-
-    const submissionIds = [...new Set((answers ?? []).map((answer) => answer.form_submission_id))];
-    if (submissionIds.length === 0) return [];
-
-    const { data: submissions, error: submissionsError } = await this.supabase
-      .from('form_submissions')
-      .select('lead_id')
-      .in('id', submissionIds);
-
-    if (submissionsError) throw submissionsError;
-
-    return (submissions ?? []).map((submission) => submission.lead_id);
+    return questionIds;
   }
 
-  private parseSalaryRange(
-    input: string,
-  ): {
-    min: number | null;
-    max: number | null;
-  } {
-    const matches = input.match(/[\d.,]+/g) ?? [];
-    const parsed = matches
-      .map((value) => value.replace(/\./g, '').replace(',', '.'))
-      .map((value) => Number.parseFloat(value))
-      .filter((value) => !Number.isNaN(value));
+  private isUuid(value: string): boolean {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+  }
 
-    if (parsed.length === 0) {
-      return { min: null, max: null };
-    }
-
-    if (parsed.length === 1) {
-      return { min: parsed[0], max: null };
-    }
-
-    return {
-      min: Math.min(parsed[0], parsed[1]),
-      max: Math.max(parsed[0], parsed[1]),
-    };
+  private escapeLikePattern(value: string): string {
+    // Evita curingas involuntários em LIKE/ILIKE.
+    return value.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
   }
 
   private mapLeadListing(lead: LeadListingRow): LeadListingItem {

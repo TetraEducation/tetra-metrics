@@ -1,4 +1,4 @@
-import { IsIn, IsNumber, IsOptional, IsString, Min } from 'class-validator';
+import { IsIn, IsNumber, IsOptional, IsString, IsUUID, Min } from 'class-validator';
 
 export const LEADS_LISTING_SORT_FIELDS = ['last_activity_at', 'created_at', 'full_name'] as const;
 export type LeadsListingSortField = (typeof LEADS_LISTING_SORT_FIELDS)[number];
@@ -31,10 +31,18 @@ export class LeadsListingSearchDto {
 
   @IsOptional()
   @IsString()
+  campaignName?: string;
+
+  @IsOptional()
+  @IsString()
   campaignTagKey?: string;
 
   @IsOptional()
   @IsString()
+  tag?: string;
+
+  @IsOptional()
+  @IsUUID()
   tagId?: string;
 
   @IsOptional()
