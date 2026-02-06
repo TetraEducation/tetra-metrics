@@ -56,8 +56,22 @@ export const COMPANY_SIZE_ALIASES = {
 export const EDUCATION_LEVEL_ALIASES = {
   fundamental: ['fundamental', 'ensino fundamental'],
   high_school: ['medio', 'médio', 'ensino medio', 'ensino médio', 'high school'],
+  high_school_incomplete: [
+    'medio incompleto',
+    'médio incompleto',
+    'ensino medio incompleto',
+    'ensino médio incompleto',
+    'high school incompleto',
+    'ensino médio parcial',
+  ],
   technical: ['tecnico', 'técnico', 'tecnologo', 'tecnólogo', 'technical'],
   bachelor: ['superior', 'graduacao', 'graduação', 'bacharelado', 'bachelor'],
+  bachelor_incomplete: [
+    'superior incompleto',
+    'ensino superior incompleto',
+    'graduação incompleta',
+    'bacharelado incompleto',
+  ],
   post_graduate: ['pos graduacao', 'pós graduação', 'especializacao', 'especialização', 'mba'],
   master: ['mestrado', 'master'],
   doctorate: ['doutorado', 'doctorate', 'phd'],

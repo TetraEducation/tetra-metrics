@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Cron, CronExpression } from '@nestjs/schedule';
+import { Cron } from '@nestjs/schedule';
 
 import { NormalizeLeadSearchProfileUseCase } from '@/modules/leads/application/use-cases/normalize-lead-search-profile.use-case';
 
@@ -11,7 +11,8 @@ export class NormalizeLeadSearchProfileScheduler {
 
   constructor(private readonly normalizeLeadSearchProfile: NormalizeLeadSearchProfileUseCase) {}
 
-  @Cron(CronExpression.EVERY_12_HOURS)
+  // Domingo 02:00 no timezone de São Paulo
+  @Cron('0 2 * * 0', { timeZone: 'America/Sao_Paulo' })
   async run(): Promise<void> {
     if (process.env[ENABLE_NORMALIZATION_JOB] !== 'true') {
       this.logger.debug(

@@ -5,6 +5,7 @@ import { SupabaseModule } from '@/infra/supabase/supabase.module';
 import { LEADS_REPOSITORY } from '@/modules/leads/application/ports/leads-repository.port';
 import { NORMALIZE_LEAD_SEARCH_PROFILE_PORT } from '@/modules/leads/application/ports/normalize-lead-search-profile.port';
 import { FunnelAnalyticsService } from '@/modules/leads/application/services/funnel-analytics.service';
+import { JobRunsService } from '@/modules/leads/application/services/job-runs.service';
 import { LeadsConsolidationService } from '@/modules/leads/application/services/leads-consolidation.service';
 import { LeadsDetailService } from '@/modules/leads/application/services/leads-detail.service';
 import { LeadsExportService } from '@/modules/leads/application/services/leads-export.service';
@@ -18,6 +19,7 @@ import { SupabaseLeadsRepository } from '@/modules/leads/infra/repositories/supa
 import { SupabaseNormalizeLeadSearchProfileRepository } from '@/modules/leads/infra/repositories/supabase-normalize-lead-search-profile.repository';
 import { LeadsController } from '@/modules/leads/interface/http/leads.controller';
 import { LeadsDetailController } from '@/modules/leads/interface/http/leads-detail.controller';
+import { LeadsJobsController } from '@/modules/leads/interface/http/leads-jobs.controller';
 import { LeadsListingController } from '@/modules/leads/interface/http/leads-listing.controller';
 
 @Module({
@@ -30,6 +32,7 @@ import { LeadsListingController } from '@/modules/leads/interface/http/leads-lis
     LeadsSearchService,
     FunnelAnalyticsService,
     LeadsListingService,
+    JobRunsService,
     NormalizeLeadSearchProfileUseCase,
     NormalizeLeadSearchProfileScheduler,
     SupabaseLeadSearchProfileRepository,
@@ -47,7 +50,7 @@ import { LeadsListingController } from '@/modules/leads/interface/http/leads-lis
       useClass: SupabaseLeadsRepository,
     },
   ],
-  controllers: [LeadsController, LeadsDetailController, LeadsListingController],
+  controllers: [LeadsController, LeadsDetailController, LeadsListingController, LeadsJobsController],
   exports: [
     LeadsImportService,
     LeadsConsolidationService,
@@ -56,6 +59,7 @@ import { LeadsListingController } from '@/modules/leads/interface/http/leads-lis
     LeadsSearchService,
     FunnelAnalyticsService,
     LeadsListingService,
+    JobRunsService,
     NormalizeLeadSearchProfileUseCase,
     NormalizeLeadSearchProfileScheduler,
   ],

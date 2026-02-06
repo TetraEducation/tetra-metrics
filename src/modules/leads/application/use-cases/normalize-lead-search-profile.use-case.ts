@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import {
   OBSERVABILITY_ADAPTER,
   type ObservabilityAdapter,
@@ -45,6 +45,8 @@ export interface NormalizeLeadSearchProfileResult {
 
 @Injectable()
 export class NormalizeLeadSearchProfileUseCase {
+  private readonly logger = new Logger(NormalizeLeadSearchProfileUseCase.name);
+
   constructor(
     @Inject(NORMALIZE_LEAD_SEARCH_PROFILE_PORT)
     private readonly port: NormalizeLeadSearchProfilePort,

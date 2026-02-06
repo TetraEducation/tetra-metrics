@@ -10,7 +10,6 @@ import type {
 } from '@/modules/leads/application/dto/leads-listing.dto';
 import type { LeadsRepositoryPort } from '@/modules/leads/application/ports/leads-repository.port';
 import type { Lead, LeadIdentifier } from '@/modules/leads/domain/lead';
-import { SupabaseLeadSearchProfileRepository } from '@/modules/leads/infra/repositories/supabase-lead-search-profile.repository';
 
 type LeadRow = {
   id: string;
@@ -39,10 +38,7 @@ type LeadListingRow = {
 
 @Injectable()
 export class SupabaseLeadsRepository implements LeadsRepositoryPort {
-  constructor(
-    @Inject(SUPABASE) private readonly supabase: SupabaseClient,
-    private readonly leadSearchProfileRepo: SupabaseLeadSearchProfileRepository,
-  ) {}
+  constructor(@Inject(SUPABASE) private readonly supabase: SupabaseClient) {}
 
   async findIdentifiersByValues(values: string[]): Promise<LeadIdentifier[]> {
     if (values.length === 0) return [];
@@ -392,66 +388,104 @@ export class SupabaseLeadsRepository implements LeadsRepositoryPort {
     }
 
     const leadIdsFilter = await this.resolveLeadIdsByFilters(params);
-    const analyticsLeadIds =
-      await this.leadSearchProfileRepo.resolveLeadIdsByAnalyticsFilters(params);
-    const combinedLeadIdsFilter = this.intersectNullableLeadIds(leadIdsFilter, analyticsLeadIds);
-    if (combinedLeadIdsFilter && combinedLeadIdsFilter.length === 0) {
+    if (leadIdsFilter && leadIdsFilter.length === 0) {
       return { data: [], page, perPage, total: 0 };
     }
+    const hasAnalyticsFilters = this.hasAnalyticsFilters(params);
 
-    const selectParts = [
+    const dataSelectParts = [
       'id',
       'full_name',
       'last_activity_at',
       'lead_identifiers(type, value, is_primary, created_at)',
     ];
     if (tagIds) {
-      selectParts.push('lead_tags!inner(tag_id)');
+      dataSelectParts.push('lead_tags!inner(tag_id)');
+    }
+    if (hasAnalyticsFilters) {
+      // INNER JOIN em lead_search_profile para aplicar filtros analíticos sem `id in (...)`
+      dataSelectParts.push('lead_search_profile!inner(lead_id)');
+    }
+    if (params.hasClintSource) {
+      dataSelectParts.push('lead_sources!inner(source_system)');
     }
 
-    const shouldAvoidExactCount =
-      Boolean(params.name) ||
-      Boolean(tagIds) ||
-      Boolean(params.lastActivityFrom) ||
-      Boolean(params.lastActivityTo);
-    const countStrategy = shouldAvoidExactCount ? 'planned' : 'exact';
+    // Mantemos `total` exato, mas evitamos acoplar o custo do COUNT ao fetch da página
+    // (e evitamos joins/selects desnecessários no COUNT, como `lead_identifiers`).
+    const countSelectParts = ['id'];
+    if (tagIds) {
+      countSelectParts.push('lead_tags!inner(tag_id)');
+    }
+    if (hasAnalyticsFilters) {
+      countSelectParts.push('lead_search_profile!inner(lead_id)');
+    }
+    if (params.hasClintSource) {
+      countSelectParts.push('lead_sources!inner(source_system)');
+    }
 
-    let query = this.supabase
+    let dataQuery = this.supabase.from('leads').select(dataSelectParts.join(', '));
+    let countQuery = this.supabase
       .from('leads')
-      .select(selectParts.join(', '), { count: countStrategy });
+      .select(countSelectParts.join(', '), { count: 'exact', head: true });
 
     if (params.name) {
       const nameSearch = normalizeText(params.name);
       if (nameSearch) {
-        query = query.ilike('full_name', `%${nameSearch}%`);
+        dataQuery = dataQuery.ilike('full_name', `%${nameSearch}%`);
+        countQuery = countQuery.ilike('full_name', `%${nameSearch}%`);
       }
     }
 
     if (params.lastActivityFrom) {
-      query = query.gte('last_activity_at', params.lastActivityFrom);
+      dataQuery = dataQuery.gte('last_activity_at', params.lastActivityFrom);
+      countQuery = countQuery.gte('last_activity_at', params.lastActivityFrom);
     }
 
     if (params.lastActivityTo) {
-      query = query.lte('last_activity_at', params.lastActivityTo);
+      dataQuery = dataQuery.lte('last_activity_at', params.lastActivityTo);
+      countQuery = countQuery.lte('last_activity_at', params.lastActivityTo);
     }
 
     if (tagIds) {
-      query = query.in('lead_tags.tag_id', tagIds);
+      dataQuery = dataQuery.in('lead_tags.tag_id', tagIds);
+      countQuery = countQuery.in('lead_tags.tag_id', tagIds);
     }
 
-    if (combinedLeadIdsFilter) {
-      query = query.in('id', combinedLeadIdsFilter);
+    if (leadIdsFilter) {
+      dataQuery = dataQuery.in('id', leadIdsFilter);
+      countQuery = countQuery.in('id', leadIdsFilter);
+    }
+
+    const clintDataFilter = await this.applyClintSourceFilterIfNeeded(dataQuery, params.hasClintSource);
+    if (clintDataFilter.shortCircuit) {
+      return { data: [], page, perPage, total: 0 };
+    }
+    dataQuery = clintDataFilter.query;
+
+    const clintCountFilter = await this.applyClintSourceFilterIfNeeded(countQuery, params.hasClintSource);
+    if (clintCountFilter.shortCircuit) {
+      return { data: [], page, perPage, total: 0 };
+    }
+    countQuery = clintCountFilter.query;
+
+    if (hasAnalyticsFilters) {
+      dataQuery = this.applyLeadSearchProfileFilters(dataQuery, params);
+      countQuery = this.applyLeadSearchProfileFilters(countQuery, params);
     }
 
     const from = (page - 1) * perPage;
     const to = from + perPage - 1;
 
-    const { data, error, count } = await query
-      .order(orderBy, { ascending: orderDirection === 'asc' })
-      .range(from, to);
+    const [{ count, error: countError }, { data, error: dataError }] = await Promise.all([
+      countQuery,
+      dataQuery.order(orderBy, { ascending: orderDirection === 'asc' }).range(from, to),
+    ]);
 
-    if (error) {
-      throw error;
+    if (countError) {
+      throw countError;
+    }
+    if (dataError) {
+      throw dataError;
     }
 
     const leads = (data ?? []) as unknown as LeadListingRow[];
@@ -475,16 +509,20 @@ export class SupabaseLeadsRepository implements LeadsRepositoryPort {
     }
 
     const leadIdsFilter = await this.resolveLeadIdsByFilters(params);
-    const analyticsLeadIds =
-      await this.leadSearchProfileRepo.resolveLeadIdsByAnalyticsFilters(params);
-    const combinedLeadIdsFilter = this.intersectNullableLeadIds(leadIdsFilter, analyticsLeadIds);
-    if (combinedLeadIdsFilter && combinedLeadIdsFilter.length === 0) {
+    if (leadIdsFilter && leadIdsFilter.length === 0) {
       return [];
     }
+    const hasAnalyticsFilters = this.hasAnalyticsFilters(params);
 
     const selectParts = ['id'];
     if (tagIds) {
       selectParts.push('lead_tags!inner(tag_id)');
+    }
+    if (hasAnalyticsFilters) {
+      selectParts.push('lead_search_profile!inner(lead_id)');
+    }
+    if (params.hasClintSource) {
+      selectParts.push('lead_sources!inner(source_system)');
     }
 
     let query = this.supabase.from('leads').select(selectParts.join(', '));
@@ -508,8 +546,18 @@ export class SupabaseLeadsRepository implements LeadsRepositoryPort {
       query = query.in('lead_tags.tag_id', tagIds);
     }
 
-    if (combinedLeadIdsFilter) {
-      query = query.in('id', combinedLeadIdsFilter);
+    if (leadIdsFilter) {
+      query = query.in('id', leadIdsFilter);
+    }
+
+    const clintFilter = await this.applyClintSourceFilterIfNeeded(query, params.hasClintSource);
+    if (clintFilter.shortCircuit) {
+      return [];
+    }
+    query = clintFilter.query;
+
+    if (hasAnalyticsFilters) {
+      query = this.applyLeadSearchProfileFilters(query, params);
     }
 
     query = query.order(orderBy, { ascending: orderDirection === 'asc' });
@@ -542,6 +590,56 @@ export class SupabaseLeadsRepository implements LeadsRepositoryPort {
     }
 
     return ids;
+  }
+
+  private hasAnalyticsFilters(params: LeadsListingSearchDto): boolean {
+    return (
+      params.salaryMin !== undefined ||
+      params.salaryMax !== undefined ||
+      params.ageMin !== undefined ||
+      params.ageMax !== undefined ||
+      params.gender !== undefined ||
+      params.companySize !== undefined ||
+      params.educationLevel !== undefined
+    );
+  }
+
+  private applyLeadSearchProfileFilters<
+    T extends {
+      eq: (column: string, value: unknown) => T;
+      or: (filters: string) => T;
+    },
+  >(query: T, params: LeadsListingSearchDto): T {
+    let nextQuery = query;
+
+    // Importante: PostgREST não aceita `lead_search_profile.salary_max...` dentro da lógica do `or`.
+    // Para filtrar tabela embutida com OR, precisamos usar `foreignTable`.
+    const orWithForeignTable = (filters: string) =>
+      (nextQuery as unknown as { or: (f: string, opts: { foreignTable: string }) => T }).or(
+        filters,
+        { foreignTable: 'lead_search_profile' },
+      );
+
+    if (params.salaryMin !== undefined) {
+      nextQuery = orWithForeignTable(`salary_max.is.null,salary_max.gte.${params.salaryMin}`);
+    }
+    if (params.salaryMax !== undefined) {
+      nextQuery = orWithForeignTable(`salary_min.is.null,salary_min.lte.${params.salaryMax}`);
+    }
+    if (params.ageMin !== undefined) {
+      nextQuery = orWithForeignTable(`age_max.is.null,age_max.gte.${params.ageMin}`);
+    }
+    if (params.ageMax !== undefined) {
+      nextQuery = orWithForeignTable(`age_min.is.null,age_min.lte.${params.ageMax}`);
+    }
+
+    if (params.gender) nextQuery = nextQuery.eq('lead_search_profile.gender', params.gender);
+    if (params.companySize)
+      nextQuery = nextQuery.eq('lead_search_profile.company_size', params.companySize);
+    if (params.educationLevel)
+      nextQuery = nextQuery.eq('lead_search_profile.education_level', params.educationLevel);
+
+    return nextQuery;
   }
 
   private mapLead(row: LeadRow): Lead {
@@ -599,6 +697,62 @@ export class SupabaseLeadsRepository implements LeadsRepositoryPort {
     }
 
     return leadIds;
+  }
+
+  private async applyClintSourceFilterIfNeeded<
+    T extends {
+      eq: (column: string, value: unknown) => T;
+      in: (column: string, values: string[]) => T;
+      not: (column: string, operator: string, value: string) => T;
+    },
+  >(query: T, hasClintSource?: boolean): Promise<{ query: T; shortCircuit: boolean }> {
+    if (hasClintSource === undefined) return { query, shortCircuit: false };
+
+    return this.applyClintSourceFilter(query, hasClintSource);
+  }
+
+  private async applyClintSourceFilter<
+    T extends {
+      eq: (column: string, value: unknown) => T;
+      in: (column: string, values: string[]) => T;
+      not: (column: string, operator: string, value: string) => T;
+    },
+  >(query: T, hasClintSource: boolean): Promise<{ query: T; shortCircuit: boolean }> {
+    if (hasClintSource) {
+      return {
+        query: query.eq('lead_sources.source_system', 'clint'),
+        shortCircuit: false,
+      };
+    }
+
+    const clintLeadIds = await this.resolveLeadIdsWithClintSource();
+    if (clintLeadIds.length === 0) {
+      return { query, shortCircuit: false };
+    }
+
+    const list = clintLeadIds.join(',');
+    return {
+      query: query.not('id', 'in', `(${list})`),
+      shortCircuit: false,
+    };
+  }
+
+  private async resolveLeadIdsWithClintSource(): Promise<string[]> {
+    const { data, error } = await this.supabase
+      .from('lead_sources')
+      .select('lead_id')
+      .eq('source_system', 'clint');
+    if (error) throw error;
+
+    const ids = new Set<string>();
+    for (const row of data ?? []) {
+      const leadId = (row as { lead_id?: string | null }).lead_id;
+      if (leadId) {
+        ids.add(leadId);
+      }
+    }
+
+    return [...ids];
   }
 
   private async resolveTagIds(params: LeadsListingSearchDto): Promise<string[] | null> {
@@ -673,18 +827,6 @@ export class SupabaseLeadsRepository implements LeadsRepositoryPort {
     if (tagIds.size === 0) return [];
 
     return [...tagIds];
-  }
-
-  private intersectNullableLeadIds(
-    first: string[] | null,
-    second: string[] | null,
-  ): string[] | null {
-    if (!first && !second) return null;
-    if (!first) return second;
-    if (!second) return first;
-
-    const secondSet = new Set(second);
-    return first.filter((id) => secondSet.has(id));
   }
 
   private isUuid(value: string): boolean {

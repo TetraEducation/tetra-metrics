@@ -125,9 +125,9 @@ describe('profile-normalization', () => {
     });
 
     it('normaliza escolaridade com completo/incompleto (planilha)', () => {
-      expect(normalizeEducationLevel('Ensino médio incompleto')).toBe('high_school');
+      expect(normalizeEducationLevel('Ensino médio incompleto')).toBe('high_school_incomplete');
       expect(normalizeEducationLevel('Ensino médio completo')).toBe('high_school');
-      expect(normalizeEducationLevel('Ensino superior incompleto')).toBe('bachelor');
+      expect(normalizeEducationLevel('Ensino superior incompleto')).toBe('bachelor_incomplete');
       expect(normalizeEducationLevel('Ensino superior completo')).toBe('bachelor');
       expect(normalizeEducationLevel('Ensino técnico')).toBe('technical');
     });
