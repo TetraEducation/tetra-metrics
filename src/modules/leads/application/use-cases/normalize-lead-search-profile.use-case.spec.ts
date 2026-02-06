@@ -60,6 +60,46 @@ function createObservabilityMock(): ObservabilityMock {
 }
 
 describe('NormalizeLeadSearchProfileUseCase', () => {
+  it('ignora execução quando já existe run ativa e allowConcurrentRun não está habilitado', async () => {
+    const port = createPortMock();
+    const observability = createObservabilityMock();
+    port.hasRunningJobRun.mockResolvedValueOnce(true);
+
+    const useCase = new NormalizeLeadSearchProfileUseCase(port, observability);
+    const result = await useCase.execute({ batchSize: 50 });
+
+    expect(result).toEqual({
+      jobRunId: null,
+      resumedFromJobRunId: null,
+      processedRows: 0,
+      processedLeads: 0,
+      cursor: null,
+      skipped: true,
+    });
+    expect(port.createJobRun).not.toHaveBeenCalled();
+    expect(observability.warn).toHaveBeenCalledWith(
+      'normalize_lead_search_profile_skipped_running_job',
+      expect.objectContaining({ jobName: JOB_NAME }),
+    );
+  });
+
+  it('ignora execução quando createJobRun sinaliza lock lógico ativo', async () => {
+    const port = createPortMock();
+    const observability = createObservabilityMock();
+    port.createJobRun.mockRejectedValueOnce(
+      new Error('Já existe execução em andamento para este job (lock lógico ativo).'),
+    );
+
+    const useCase = new NormalizeLeadSearchProfileUseCase(port, observability);
+    const result = await useCase.execute({ batchSize: 50 });
+
+    expect(result.skipped).toBe(true);
+    expect(observability.warn).toHaveBeenCalledWith(
+      'normalize_lead_search_profile_skipped_lock',
+      expect.objectContaining({ jobName: JOB_NAME }),
+    );
+  });
+
   it('retoma de job_runs com status running e usa cursor/progresso como base', async () => {
     const port = createPortMock();
     const runningRun = buildJobRunSnapshot({
