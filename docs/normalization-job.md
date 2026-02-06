@@ -86,6 +86,20 @@ Campos típicos (exemplo):
 
 ---
 
+
+## Decisão aplicada para representação textual de faixas
+
+**Escolha: Opção 1 — reconstituir texto no momento do export a partir de `salary_min/salary_max` e `age_min/age_max`.**
+
+### Justificativa
+- Evita duplicação de fonte de verdade no snapshot (não persistimos coluna textual redundante).
+- Mantém o snapshot focado em filtros/indexação por dados normalizados numéricos.
+- Permite evoluir o formato textual sem migração de dados históricos.
+
+### Implementação
+- A formatação foi centralizada em função dedicada de domínio (`formatSalaryRange` e `formatAgeRange`).
+- O parser e o formatter são validados com testes de round-trip (`parse -> format -> parse`) para garantir consistência entre forma normalizada e representação textual.
+
 ## Logs estruturados esperados
 
 Cada execução deve produzir logs estruturados (JSON) com campos mínimos:
