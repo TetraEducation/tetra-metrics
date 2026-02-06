@@ -144,6 +144,21 @@ export class SupabaseNormalizeLeadSearchProfileRepository
     return this.toJobRunSnapshot(data as JobRunRow);
   }
 
+  async hasRunningJobRun(jobName: string): Promise<boolean> {
+    const { count, error } = await this.supabase
+      .from('job_runs')
+      .select('id', { head: true, count: 'exact' })
+      .eq('job_name', jobName)
+      .eq('status', 'running');
+
+    if (error) {
+      throw new InternalServerErrorException(
+        `Erro ao verificar execução concorrente do job_run: ${error.message}`,
+      );
+    }
+
+    return (count ?? 0) > 0;
+  }
   async createJobRun(params: {
     jobName: string;
     status: JobRunStatus;
@@ -169,6 +184,12 @@ export class SupabaseNormalizeLeadSearchProfileRepository
       .single();
 
     if (error) {
+      if (error.code === '23505') {
+        throw new InternalServerErrorException(
+          'Já existe execução em andamento para este job (lock lógico ativo).',
+        );
+      }
+
       throw new InternalServerErrorException(`Erro ao criar job_run: ${error.message}`);
     }
 

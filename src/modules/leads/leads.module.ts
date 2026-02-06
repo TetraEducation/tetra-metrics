@@ -10,6 +10,7 @@ import { LeadsExportService } from '@/modules/leads/application/services/leads-e
 import { LeadsImportService } from '@/modules/leads/application/services/leads-import.service';
 import { LeadsListingService } from '@/modules/leads/application/services/leads-listing.service';
 import { LeadsSearchService } from '@/modules/leads/application/services/leads-search.service';
+import { NormalizeLeadSearchProfileScheduler } from '@/modules/leads/application/services/normalize-lead-search-profile.scheduler';
 import { NormalizeLeadSearchProfileUseCase } from '@/modules/leads/application/use-cases/normalize-lead-search-profile.use-case';
 import { SupabaseLeadSearchProfileRepository } from '@/modules/leads/infra/repositories/supabase-lead-search-profile.repository';
 import { SupabaseLeadsRepository } from '@/modules/leads/infra/repositories/supabase-leads.repository';
@@ -29,6 +30,7 @@ import { LeadsListingController } from '@/modules/leads/interface/http/leads-lis
     FunnelAnalyticsService,
     LeadsListingService,
     NormalizeLeadSearchProfileUseCase,
+    NormalizeLeadSearchProfileScheduler,
     SupabaseLeadSearchProfileRepository,
     {
       provide: NORMALIZE_LEAD_SEARCH_PROFILE_PORT,
@@ -49,6 +51,7 @@ import { LeadsListingController } from '@/modules/leads/interface/http/leads-lis
     FunnelAnalyticsService,
     LeadsListingService,
     NormalizeLeadSearchProfileUseCase,
+    NormalizeLeadSearchProfileScheduler,
   ],
 })
 export class LeadsModule {}
