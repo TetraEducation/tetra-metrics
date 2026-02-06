@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
-
+import { NestLoggerObservabilityAdapter } from '@/infra/observability/nest-logger.observability-adapter';
+import { OBSERVABILITY_ADAPTER } from '@/infra/observability/observability.adapter';
 import { SupabaseModule } from '@/infra/supabase/supabase.module';
 import { LEADS_REPOSITORY } from '@/modules/leads/application/ports/leads-repository.port';
 import { NORMALIZE_LEAD_SEARCH_PROFILE_PORT } from '@/modules/leads/application/ports/normalize-lead-search-profile.port';
@@ -32,9 +33,14 @@ import { LeadsListingController } from '@/modules/leads/interface/http/leads-lis
     NormalizeLeadSearchProfileUseCase,
     NormalizeLeadSearchProfileScheduler,
     SupabaseLeadSearchProfileRepository,
+    NestLoggerObservabilityAdapter,
     {
       provide: NORMALIZE_LEAD_SEARCH_PROFILE_PORT,
       useClass: SupabaseNormalizeLeadSearchProfileRepository,
+    },
+    {
+      provide: OBSERVABILITY_ADAPTER,
+      useExisting: NestLoggerObservabilityAdapter,
     },
     {
       provide: LEADS_REPOSITORY,

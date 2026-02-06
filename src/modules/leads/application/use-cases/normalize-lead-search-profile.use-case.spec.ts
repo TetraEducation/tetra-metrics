@@ -1,9 +1,10 @@
-import { NormalizeLeadSearchProfileUseCase } from './normalize-lead-search-profile.use-case';
+import type { ObservabilityAdapter } from '@/infra/observability/observability.adapter';
 import type {
   FormAnswerBatchItem,
   JobRunSnapshot,
   NormalizeLeadSearchProfilePort,
 } from '@/modules/leads/application/ports/normalize-lead-search-profile.port';
+import { NormalizeLeadSearchProfileUseCase } from './normalize-lead-search-profile.use-case';
 
 const QUESTION_ID = 'q-gender-1';
 const JOB_NAME = 'normalize-lead-search-profile';
@@ -34,6 +35,7 @@ function buildJobRunSnapshot(overrides: Partial<JobRunSnapshot> = {}): JobRunSna
 }
 
 type PortMock = jest.Mocked<NormalizeLeadSearchProfilePort>;
+type ObservabilityMock = jest.Mocked<ObservabilityAdapter>;
 
 function createPortMock(): PortMock {
   return {
@@ -46,6 +48,14 @@ function createPortMock(): PortMock {
     updateJobRunProgress: jest.fn().mockResolvedValue(undefined),
     markJobRunFailed: jest.fn().mockResolvedValue(undefined),
     markJobRunCompleted: jest.fn().mockResolvedValue(undefined),
+  };
+}
+
+function createObservabilityMock(): ObservabilityMock {
+  return {
+    info: jest.fn(),
+    warn: jest.fn(),
+    error: jest.fn(),
   };
 }
 
@@ -70,7 +80,7 @@ describe('NormalizeLeadSearchProfileUseCase', () => {
       }),
     );
 
-    const useCase = new NormalizeLeadSearchProfileUseCase(port);
+    const useCase = new NormalizeLeadSearchProfileUseCase(port, createObservabilityMock());
     await useCase.execute({ batchSize: 50 });
 
     expect(port.findLatestJobRunByStatuses).toHaveBeenCalledWith({
@@ -99,7 +109,7 @@ describe('NormalizeLeadSearchProfileUseCase', () => {
 
     port.findLatestJobRunByStatuses.mockResolvedValueOnce(failedRun);
 
-    const useCase = new NormalizeLeadSearchProfileUseCase(port);
+    const useCase = new NormalizeLeadSearchProfileUseCase(port, createObservabilityMock());
     await useCase.execute({ batchSize: 25 });
 
     expect(port.createJobRun).toHaveBeenCalledWith(
@@ -122,11 +132,9 @@ describe('NormalizeLeadSearchProfileUseCase', () => {
       processedLeads: 10,
     });
 
-    port.findLatestJobRunByStatuses
-      .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce(completedRun);
+    port.findLatestJobRunByStatuses.mockResolvedValueOnce(null).mockResolvedValueOnce(completedRun);
 
-    const useCase = new NormalizeLeadSearchProfileUseCase(port);
+    const useCase = new NormalizeLeadSearchProfileUseCase(port, createObservabilityMock());
     await useCase.execute({ batchSize: 100 });
 
     expect(port.findLatestJobRunByStatuses).toHaveBeenNthCalledWith(1, {
@@ -158,7 +166,7 @@ describe('NormalizeLeadSearchProfileUseCase', () => {
       ])
       .mockResolvedValueOnce([]);
 
-    const useCase = new NormalizeLeadSearchProfileUseCase(port);
+    const useCase = new NormalizeLeadSearchProfileUseCase(port, createObservabilityMock());
     const result = await useCase.execute({ batchSize: 2 });
 
     expect(port.updateJobRunProgress).toHaveBeenNthCalledWith(1, {
@@ -200,7 +208,7 @@ describe('NormalizeLeadSearchProfileUseCase', () => {
       .mockResolvedValueOnce(undefined)
       .mockRejectedValueOnce(new Error('falha no upsert'));
 
-    const useCase = new NormalizeLeadSearchProfileUseCase(port);
+    const useCase = new NormalizeLeadSearchProfileUseCase(port, createObservabilityMock());
 
     await expect(useCase.execute({ batchSize: 1 })).rejects.toThrow('falha no upsert');
 
@@ -220,4 +228,66 @@ describe('NormalizeLeadSearchProfileUseCase', () => {
     });
     expect(port.markJobRunCompleted).not.toHaveBeenCalled();
   });
+});
+
+it('emite eventos estruturados de início, progresso e conclusão', async () => {
+  const port = createPortMock();
+  const observability = createObservabilityMock();
+
+  port.resolveQuestionIdsByNormalizedKeys.mockResolvedValue({
+    gender: [QUESTION_ID],
+    'genero da pessoa': [],
+    sexo: [],
+    company_size: [],
+    porte_empresa: [],
+    'porte da empresa': [],
+    company: [],
+    education_level: [],
+    escolaridade: [],
+    formacao: [],
+    age: [],
+    idade: [],
+    faixa_etaria: [],
+    salary: [],
+    salario: [],
+    renda: [],
+  });
+  port.readFormAnswersBatch
+    .mockResolvedValueOnce([
+      buildBatchItem({ id: 'a-1', leadId: 'lead-1', createdAt: '2025-02-01T00:00:00.000Z' }),
+    ])
+    .mockResolvedValueOnce([]);
+
+  const useCase = new NormalizeLeadSearchProfileUseCase(port, observability);
+
+  await useCase.execute({ batchSize: 10 });
+
+  expect(observability.info).toHaveBeenCalledWith(
+    'normalize_lead_search_profile_started',
+    expect.objectContaining({
+      jobRunId: 'run-1',
+      step: 'start',
+      batchSize: 10,
+      unknownEducationCount: 0,
+    }),
+  );
+  expect(observability.info).toHaveBeenCalledWith(
+    'normalize_lead_search_profile_progress',
+    expect.objectContaining({
+      jobRunId: 'run-1',
+      step: 'batch_progress',
+      cursorId: 'a-1',
+      processedRows: 1,
+      processedLeads: 1,
+    }),
+  );
+  expect(observability.info).toHaveBeenCalledWith(
+    'normalize_lead_search_profile_completed',
+    expect.objectContaining({
+      jobRunId: 'run-1',
+      step: 'complete',
+      processedRows: 1,
+      processedLeads: 1,
+    }),
+  );
 });
