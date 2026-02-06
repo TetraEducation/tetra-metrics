@@ -1,5 +1,4 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { normalizeText } from '@/modules/imports/application/utils/normalize';
 import {
   type FormAnswerBatchItem,
   type JobRunCursor,
@@ -7,18 +6,19 @@ import {
   NORMALIZE_LEAD_SEARCH_PROFILE_PORT,
   type NormalizeLeadSearchProfilePort,
 } from '@/modules/leads/application/ports/normalize-lead-search-profile.port';
+import {
+  createUnknownNormalizationCounts,
+  normalizeCompanySize,
+  normalizeEducationLevel,
+  normalizeGender,
+  PROFILE_FIELD_TO_QUESTION_KEYS,
+  parseAgeRange,
+  parseSalaryRange,
+  type UnknownNormalizationCounts,
+  withUnknownValueCount,
+} from '@/modules/leads/domain/normalization';
 
 const JOB_NAME = 'normalize-lead-search-profile';
-
-const PROFILE_KEY_TO_QUESTION_KEYS: Record<string, string[]> = {
-  salaryMin: ['salary-min', 'salary-minimum', 'salario-minimo', 'pretensao-salarial-minima'],
-  salaryMax: ['salary-max', 'salary-maximum', 'salario-maximo', 'pretensao-salarial-maxima'],
-  ageMin: ['age-min', 'idade-minima'],
-  ageMax: ['age-max', 'idade-maxima'],
-  gender: ['gender', 'genero', 'sexo'],
-  companySize: ['company-size', 'company-porte', 'porte-empresa', 'porte'],
-  educationLevel: ['education-level', 'schooling', 'escolaridade'],
-};
 
 export interface NormalizeLeadSearchProfileInput {
   batchSize: number;
@@ -68,6 +68,7 @@ export class NormalizeLeadSearchProfileUseCase {
     let cursor = run.cursor;
     let processedRows = run.processedRows;
     let processedLeads = run.processedLeads;
+    let unknownNormalizationCounts = createUnknownNormalizationCounts();
 
     try {
       const questionIdToField = await this.resolveQuestionIdToFieldMap();
@@ -99,7 +100,9 @@ export class NormalizeLeadSearchProfileUseCase {
 
         if (batch.length === 0) break;
 
-        const payload = this.buildProfileBatch(batch, questionIdToField);
+        const parsed = this.buildProfileBatch(batch, questionIdToField, unknownNormalizationCounts);
+        const payload = parsed.payload;
+        unknownNormalizationCounts = parsed.unknownNormalizationCounts;
 
         if (!dryRun && payload.length > 0) {
           await this.port.upsertLeadSearchProfile(payload);
@@ -120,6 +123,11 @@ export class NormalizeLeadSearchProfileUseCase {
           processedLeads,
         });
       }
+
+      this.logger.log({
+        event: 'lead_search_profile_normalization_unknown_values',
+        unknownNormalizationCounts,
+      });
 
       await this.port.markJobRunCompleted({
         id: run.id,
@@ -169,11 +177,11 @@ export class NormalizeLeadSearchProfileUseCase {
   private async resolveQuestionIdToFieldMap(): Promise<
     Map<string, keyof LeadSearchProfileUpsertPayload>
   > {
-    const allKeys = [...new Set(Object.values(PROFILE_KEY_TO_QUESTION_KEYS).flat())];
+    const allKeys = [...new Set(Object.values(PROFILE_FIELD_TO_QUESTION_KEYS).flat())];
     const resolved = await this.port.resolveQuestionIdsByNormalizedKeys(allKeys);
     const mapping = new Map<string, keyof LeadSearchProfileUpsertPayload>();
 
-    for (const [field, keys] of Object.entries(PROFILE_KEY_TO_QUESTION_KEYS)) {
+    for (const [field, keys] of Object.entries(PROFILE_FIELD_TO_QUESTION_KEYS)) {
       for (const key of keys) {
         const questionIds = resolved[key] ?? [];
         for (const questionId of questionIds) {
@@ -188,8 +196,13 @@ export class NormalizeLeadSearchProfileUseCase {
   private buildProfileBatch(
     batch: FormAnswerBatchItem[],
     questionIdToField: Map<string, keyof LeadSearchProfileUpsertPayload>,
-  ): LeadSearchProfileUpsertPayload[] {
+    unknownNormalizationCounts: UnknownNormalizationCounts,
+  ): {
+    payload: LeadSearchProfileUpsertPayload[];
+    unknownNormalizationCounts: UnknownNormalizationCounts;
+  } {
     const updates = new Map<string, LeadSearchProfileUpsertPayload>();
+    let updatedUnknownCounts = unknownNormalizationCounts;
 
     for (const answer of batch) {
       if (!answer.leadId) continue;
@@ -197,35 +210,85 @@ export class NormalizeLeadSearchProfileUseCase {
       if (!field) continue;
 
       const current = updates.get(answer.leadId) ?? { leadId: answer.leadId };
-      const value = this.parseFieldValue(field, answer);
-      current[field] = value as never;
+      const parsed = this.parseFieldValue(field, answer, updatedUnknownCounts);
+      current[field] = parsed.value as never;
+      updatedUnknownCounts = parsed.unknownNormalizationCounts;
       updates.set(answer.leadId, current);
     }
 
-    return [...updates.values()];
+    return {
+      payload: [...updates.values()],
+      unknownNormalizationCounts: updatedUnknownCounts,
+    };
   }
 
   private parseFieldValue(
     field: keyof LeadSearchProfileUpsertPayload,
     answer: FormAnswerBatchItem,
-  ): string | number | null {
-    if (
-      field === 'salaryMin' ||
-      field === 'salaryMax' ||
-      field === 'ageMin' ||
-      field === 'ageMax'
-    ) {
-      if (typeof answer.valueNumber === 'number' && Number.isFinite(answer.valueNumber)) {
-        return answer.valueNumber;
-      }
-
-      const source = answer.valueText?.replace(',', '.')?.trim();
-      if (!source) return null;
-      const parsed = Number(source.replace(/[^0-9.-]/g, ''));
-      return Number.isFinite(parsed) ? parsed : null;
+    unknownNormalizationCounts: UnknownNormalizationCounts,
+  ): {
+    value: string | number | null;
+    unknownNormalizationCounts: UnknownNormalizationCounts;
+  } {
+    if (typeof answer.valueNumber === 'number' && Number.isFinite(answer.valueNumber)) {
+      return { value: answer.valueNumber, unknownNormalizationCounts };
     }
 
-    const normalized = normalizeText(answer.valueText ?? '');
-    return normalized || null;
+    if (field === 'salaryMin' || field === 'salaryMax') {
+      const range = parseSalaryRange(answer.valueText);
+      return {
+        value: field === 'salaryMin' ? range.salary_min : range.salary_max,
+        unknownNormalizationCounts,
+      };
+    }
+
+    if (field === 'ageMin' || field === 'ageMax') {
+      const range = parseAgeRange(answer.valueText);
+      return {
+        value: field === 'ageMin' ? range.age_min : range.age_max,
+        unknownNormalizationCounts,
+      };
+    }
+
+    if (field === 'gender') {
+      const normalized = normalizeGender(answer.valueText);
+      return {
+        value: normalized,
+        unknownNormalizationCounts: withUnknownValueCount({
+          counts: unknownNormalizationCounts,
+          field: 'gender',
+          rawValue: answer.valueText,
+          normalizedValue: normalized,
+        }),
+      };
+    }
+
+    if (field === 'companySize') {
+      const normalized = normalizeCompanySize(answer.valueText);
+      return {
+        value: normalized,
+        unknownNormalizationCounts: withUnknownValueCount({
+          counts: unknownNormalizationCounts,
+          field: 'companySize',
+          rawValue: answer.valueText,
+          normalizedValue: normalized,
+        }),
+      };
+    }
+
+    if (field === 'educationLevel') {
+      const normalized = normalizeEducationLevel(answer.valueText);
+      return {
+        value: normalized,
+        unknownNormalizationCounts: withUnknownValueCount({
+          counts: unknownNormalizationCounts,
+          field: 'educationLevel',
+          rawValue: answer.valueText,
+          normalizedValue: normalized,
+        }),
+      };
+    }
+
+    return { value: null, unknownNormalizationCounts };
   }
 }
