@@ -4,6 +4,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { SUPABASE } from '@/infra/supabase/supabase.provider';
 import { normalizeText } from '@/modules/imports/application/utils/normalize';
 import type { LeadsListingSearchDto } from '@/modules/leads/application/dto/leads-listing.dto';
+import { applyOpenRangeIntersectionFilter } from '@/modules/leads/application/utils/open-range-predicate';
 
 type AnalyticsFilters = {
   salaryMin?: number;
@@ -27,18 +28,16 @@ export class SupabaseLeadSearchProfileRepository {
 
     let query = this.supabase.from('lead_search_profile').select('lead_id');
 
-    if (filters.salaryMin !== undefined) {
-      query = query.gte('salary_max', filters.salaryMin);
-    }
-    if (filters.salaryMax !== undefined) {
-      query = query.lte('salary_min', filters.salaryMax);
-    }
-    if (filters.ageMin !== undefined) {
-      query = query.gte('age_max', filters.ageMin);
-    }
-    if (filters.ageMax !== undefined) {
-      query = query.lte('age_min', filters.ageMax);
-    }
+    query = applyOpenRangeIntersectionFilter(
+      query,
+      { profileMin: 'salary_min', profileMax: 'salary_max' },
+      { min: filters.salaryMin, max: filters.salaryMax },
+    );
+    query = applyOpenRangeIntersectionFilter(
+      query,
+      { profileMin: 'age_min', profileMax: 'age_max' },
+      { min: filters.ageMin, max: filters.ageMax },
+    );
 
     query = this.applyDiscreteFilter(query, 'gender', filters.genders);
     query = this.applyDiscreteFilter(query, 'company_size', filters.companySizes);
