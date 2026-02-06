@@ -111,6 +111,7 @@ export class NormalizeLeadSearchProfileUseCase {
         processedLeads: resumeFrom?.processedLeads ?? 0,
         meta: {
           dryRun,
+          fromStart,
           resumedFromJobRunId: resumeFrom?.id ?? null,
           ...(input.metadata ?? {}),
         },

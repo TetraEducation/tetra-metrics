@@ -72,6 +72,22 @@ O job passou a explicitar por que não processou nada:
 
 Também existe log de debug de leitura de batch (cursor/limit/quantidade retornada) quando `NORMALIZE_DEBUG=true` ou `--debug`.
 
+## Retomada (padrão) e por que pode “terminar em 1 segundo”
+
+Por padrão (`fromStart=false`), o job **retoma do último `job_run`**:
+
+- O cursor base vem do `job_runs.cursor_created_at` + `job_runs.cursor_id` do run anterior.
+- Os contadores iniciais (`processedRows`/`processedLeads`) também podem ser **herdados** do run anterior, para refletir continuidade.
+
+Isso significa que é comum ver uma execução finalizar quase instantaneamente quando:
+
+- O cursor já está no “fim” do dataset, e
+- O primeiro `readFormAnswersBatch` retorna vazio
+
+Nesse caso, o job finaliza com `meta.reason = "no_answers_found"` e os contadores podem aparecer “altos” mesmo sem ter processado nada novo naquela execução (eles representam o acumulado da retomada).
+
+Para reprocessar tudo do zero, use `--from-start` (ou `fromStart=true` quando exposto via API).
+
 ## Como executar
 
 Script:

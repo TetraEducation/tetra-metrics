@@ -1,6 +1,7 @@
 import {
   ConflictException,
   Controller,
+  Body,
   Get,
   HttpCode,
   Logger,
@@ -14,7 +15,10 @@ import {
 import { JobRunsService } from '@/modules/leads/application/services/job-runs.service';
 // biome-ignore lint/style/useImportType: NestJS DI precisa da referência em tempo de execução
 import { NormalizeLeadSearchProfileUseCase } from '@/modules/leads/application/use-cases/normalize-lead-search-profile.use-case';
-import { LeadsJobRunsQueryDto } from '@/modules/leads/interface/http/leads-jobs.dto';
+import {
+  LeadsJobRunsQueryDto,
+  RunNormalizeLeadSearchProfileDto,
+} from '@/modules/leads/interface/http/leads-jobs.dto';
 
 const NORMALIZE_JOB_NAME = 'normalize-lead-search-profile';
 
@@ -44,17 +48,29 @@ export class LeadsJobsController {
 
   @Post('normalize-lead-search-profile/run')
   @HttpCode(202)
-  async runNormalizeLeadSearchProfile() {
+  @UsePipes(
+    new ValidationPipe({
+      transform: true,
+      whitelist: true,
+    }),
+  )
+  async runNormalizeLeadSearchProfile(@Body() body: RunNormalizeLeadSearchProfileDto) {
     const alreadyRunning = await this.jobRuns.hasRunningJob(NORMALIZE_JOB_NAME);
     if (alreadyRunning) {
       throw new ConflictException('Já existe uma execução em andamento para este job.');
     }
 
+    const batchSize = Math.min(5000, Math.max(1, body.batchSize ?? 500));
+    const dryRun = body.dryRun ?? false;
+    const fromStart = body.fromStart ?? false;
+
     setImmediate(() => {
       void this.normalizeLeadSearchProfile
         .execute({
-          batchSize: 500,
-          metadata: { trigger: 'manual_api' },
+          batchSize,
+          dryRun,
+          fromStart,
+          metadata: { trigger: 'manual_api', fromStart, dryRun, batchSize },
         })
         .then((result) => {
           if (result.skipped) {

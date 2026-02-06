@@ -9,6 +9,20 @@ O backend mantém um histórico de execuções de jobs na tabela `job_runs` e ex
 - **Ver execuções recentes** (para status/monitoramento)
 - **Disparar manualmente** o job `normalize-lead-search-profile` (para um botão no painel)
 
+#### Retomada (padrão) vs “rodar do início”
+
+Por padrão, o job `normalize-lead-search-profile` **retoma de onde parou**:
+
+- Ele busca o último `job_run` do mesmo `job_name` e usa o `cursor` persistido (`cursor_created_at` + `cursor_id`).
+- Ele só lê/processa **novos** registros de `form_answers` **após** esse cursor.
+
+Isso tem 2 implicações importantes para o frontend:
+
+- **Execução pode “terminar em 1s”**: se não houver nada novo depois do cursor, o primeiro batch vem vazio e a execução finaliza rapidamente com `meta.reason = "no_answers_found"`. Isso **não significa** que ele reprocessou milhões de linhas; significa “nada novo para processar”.
+- **Contadores podem ser cumulativos**: quando o job retoma, ele cria um novo `job_run` inicializando `processed_rows` e `processed_leads` com os valores do run anterior (continuação). Para mostrar “quanto processou nesta execução”, o frontend deve calcular o delta comparando com o run indicado por `meta.resumedFromJobRunId` (quando existir).
+
+Quando você quer reprocessar tudo, use **`fromStart=true`** (ignora o cursor/retomada e começa do zero). Nesse modo, `processed_rows/processed_leads` iniciam em `0` e o job varre tudo novamente.
+
 #### GET `/leads/jobs/runs`
 
 Lista execuções recentes (ordenadas por `started_at` desc).
@@ -53,11 +67,21 @@ Dispara manualmente o job `normalize-lead-search-profile`.
 
 - Retorna **`202 Accepted`** imediatamente (o processamento roda em background no servidor).
 - Se já existir execução em andamento, retorna **`409 Conflict`**.
+- Aceita payload opcional para controlar a execução (ex.: `fromStart`).
 
 **Exemplo de request**
 
 ```http
 POST /leads/jobs/normalize-lead-search-profile/run
+```
+
+**Exemplo de request (com body)**
+
+```http
+POST /leads/jobs/normalize-lead-search-profile/run
+Content-Type: application/json
+
+{ "fromStart": true }
 ```
 
 **Exemplo de response (202)**
@@ -82,14 +106,22 @@ POST /leads/jobs/normalize-lead-search-profile/run
 - **Botão “Rodar agora”**
   - Desabilitar se o status atual for `running`.
   - Ao clicar:
-    - Fazer `POST /leads/jobs/normalize-lead-search-profile/run`
+    - Fazer `POST /leads/jobs/normalize-lead-search-profile/run` (opcionalmente com `{ "fromStart": true }` para reprocessar do início)
     - Se retornar `202`, atualizar UI para “em execução” e iniciar polling.
     - Se retornar `409`, exibir mensagem “Já existe uma execução em andamento” e iniciar polling (porque já está rodando).
+
+- **Checkbox “Reprocessar do início” (sugestão)**
+  - Quando marcado, enviar `{ "fromStart": true }`.
+  - Quando desmarcado (padrão), não enviar nada (ou `{ "fromStart": false }`) e o job retoma do último cursor.
 
 - **Polling para atualizar status**
   - Enquanto `running`, fazer polling em `GET /leads/jobs/runs?jobName=normalize-lead-search-profile&limit=1`:
     - Intervalo recomendado: **3–5s** nos primeiros 30s, depois **10–15s**.
   - Parar o polling quando status mudar para `completed` ou `failed`.
+
+- **Mensagens úteis (baseado em `meta`)**
+  - Se o run mais recente está `completed` e `meta.reason = "no_answers_found"`, exibir “Sem novos dados para processar”.
+  - Se `meta.fromStart = true`, exibir um selo “Reprocessamento do início”.
 
 - **Tratamento de erros de rede**
   - Se o polling falhar, manter o último status exibido e re-tentar (ex.: backoff simples).
