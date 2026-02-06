@@ -19,6 +19,13 @@ describe('profile-normalization', () => {
       });
     });
 
+    it('parseia limite inferior com “ou mais”', () => {
+      expect(parseSalaryRange('R$6.000,00 ou mais')).toEqual({
+        salary_min: 6000,
+        salary_max: null,
+      });
+    });
+
     it('parseia limites abertos', () => {
       expect(parseSalaryRange('até 4.000')).toEqual({
         salary_min: null,
@@ -63,6 +70,10 @@ describe('profile-normalization', () => {
       expect(parseAgeRange('18 - 24')).toEqual({ age_min: 18, age_max: 24 });
     });
 
+    it('parseia limite inferior com “ou mais”', () => {
+      expect(parseAgeRange('65 anos ou mais')).toEqual({ age_min: 65, age_max: null });
+    });
+
     it('retorna valor único como intervalo fechado', () => {
       expect(parseAgeRange('35')).toEqual({ age_min: 35, age_max: 35 });
     });
@@ -99,9 +110,26 @@ describe('profile-normalization', () => {
       expect(normalizeCompanySize('MEI')).toBe('micro');
     });
 
+    it('normaliza porte da empresa com frases (planilha)', () => {
+      expect(normalizeCompanySize('Pequena (até 20 funcionarios)')).toBe('small');
+      expect(normalizeCompanySize('Média (20 a 200 funcionários)')).toBe('medium');
+      expect(normalizeCompanySize('Grande ou multinacional (acima de 200 funcionários)')).toBe(
+        'large',
+      );
+      expect(normalizeCompanySize('Não estou trabalhando no momento')).toBe('unemployed');
+    });
+
     it('normaliza escolaridade com variações', () => {
       expect(normalizeEducationLevel(' Pós Graduação ')).toBe('post_graduate');
       expect(normalizeEducationLevel('dOutOrAdO')).toBe('doctorate');
+    });
+
+    it('normaliza escolaridade com completo/incompleto (planilha)', () => {
+      expect(normalizeEducationLevel('Ensino médio incompleto')).toBe('high_school');
+      expect(normalizeEducationLevel('Ensino médio completo')).toBe('high_school');
+      expect(normalizeEducationLevel('Ensino superior incompleto')).toBe('bachelor');
+      expect(normalizeEducationLevel('Ensino superior completo')).toBe('bachelor');
+      expect(normalizeEducationLevel('Ensino técnico')).toBe('technical');
     });
 
     it('retorna null para desconhecidos', () => {

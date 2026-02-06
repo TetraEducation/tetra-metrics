@@ -1,4 +1,4 @@
-import { Inject, Injectable, InternalServerErrorException } from '@nestjs/common';
+import { Inject, Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { SUPABASE } from '@/infra/supabase/supabase.provider';
@@ -25,15 +25,29 @@ interface JobRunRow {
 export class SupabaseNormalizeLeadSearchProfileRepository
   implements NormalizeLeadSearchProfilePort
 {
+  private readonly logger = new Logger(SupabaseNormalizeLeadSearchProfileRepository.name);
+
   constructor(@Inject(SUPABASE) private readonly supabase: SupabaseClient) {}
 
+  private isDebugEnabled(): boolean {
+    return String(process.env.NORMALIZE_DEBUG ?? 'false') === 'true';
+  }
+
   async resolveQuestionIdsByNormalizedKeys(keys: string[]): Promise<Record<string, string[]>> {
-    if (keys.length === 0) return {};
+    const normalizedKeys = keys.map((k) => k.trim()).filter(Boolean);
+    if (normalizedKeys.length === 0) return {};
 
     const { data, error } = await this.supabase
       .from('form_questions')
       .select('id,key_normalized')
-      .in('key_normalized', keys);
+      // Os headers das planilhas frequentemente viram frases longas (ex.: "qual-seu-sexo-...").
+      // Portanto, usamos match por substring (ilike) para capturar essas variações.
+      // PostgREST usa wildcard '*' em filtros.
+      .or(
+        normalizedKeys
+          .map((key) => `key_normalized.ilike.*${key.replaceAll('*', '')}*`)
+          .join(','),
+      );
 
     if (error) {
       throw new InternalServerErrorException(
@@ -42,11 +56,18 @@ export class SupabaseNormalizeLeadSearchProfileRepository
     }
 
     const output: Record<string, string[]> = {};
-    for (const key of keys) output[key] = [];
+    for (const key of normalizedKeys) output[key] = [];
 
     for (const row of data ?? []) {
-      const normalized = String(row.key_normalized);
-      output[normalized] = [...(output[normalized] ?? []), String(row.id)];
+      const questionKeyNormalized = String(row.key_normalized ?? '');
+      if (!questionKeyNormalized) continue;
+
+      const questionId = String(row.id);
+      for (const key of normalizedKeys) {
+        if (questionKeyNormalized.includes(key)) {
+          output[key] = [...(output[key] ?? []), questionId];
+        }
+      }
     }
 
     return output;
@@ -59,6 +80,21 @@ export class SupabaseNormalizeLeadSearchProfileRepository
   }): Promise<FormAnswerBatchItem[]> {
     if (params.questionIds.length === 0) return [];
 
+    const debug = this.isDebugEnabled();
+    const paginationFilter = params.cursor
+      ? `created_at.gt.${params.cursor.createdAt},and(created_at.eq.${params.cursor.createdAt},id.gt.${params.cursor.id})`
+      : null;
+
+    if (debug) {
+      this.logger.debug({
+        event: 'normalize_lead_search_profile_read_batch_start',
+        questionIdsCount: params.questionIds.length,
+        limit: params.limit,
+        cursor: params.cursor,
+        paginationFilter,
+      });
+    }
+
     let query = this.supabase
       .from('form_answers')
       .select(
@@ -70,15 +106,46 @@ export class SupabaseNormalizeLeadSearchProfileRepository
       .limit(params.limit);
 
     if (params.cursor) {
-      query = query.or(
-        `created_at.gt.${params.cursor.createdAt},and(created_at.eq.${params.cursor.createdAt},id.gt.${params.cursor.id})`,
-      );
+      query = query.or(paginationFilter!);
     }
 
     const { data, error } = await query;
 
     if (error) {
       throw new InternalServerErrorException(`Erro ao ler form_answers em lote: ${error.message}`);
+    }
+
+    if (debug) {
+      this.logger.debug({
+        event: 'normalize_lead_search_profile_read_batch_done',
+        returnedRows: (data ?? []).length,
+      });
+    }
+
+    // Diagnóstico opcional: quando voltar vazio, tentar diferenciar “não existe nada”
+    // vs “existe, mas o cursor/paginação está fora do intervalo”.
+    if (debug && (data ?? []).length === 0) {
+      let countQuery = this.supabase
+        .from('form_answers')
+        .select('id', { head: true, count: 'exact' })
+        .in('question_id', params.questionIds);
+
+      if (params.cursor) {
+        countQuery = countQuery.or(paginationFilter!);
+      }
+
+      const { count, error: countError } = await countQuery;
+      if (countError) {
+        this.logger.debug({
+          event: 'normalize_lead_search_profile_empty_batch_count_error',
+          message: countError.message,
+        });
+      } else {
+        this.logger.debug({
+          event: 'normalize_lead_search_profile_empty_batch_count',
+          count: count ?? 0,
+        });
+      }
     }
 
     return (data ?? []).map((row) => ({

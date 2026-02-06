@@ -10,7 +10,7 @@ import type {
 } from '@/modules/leads/application/dto/leads-listing.dto';
 import type { LeadsRepositoryPort } from '@/modules/leads/application/ports/leads-repository.port';
 import type { Lead, LeadIdentifier } from '@/modules/leads/domain/lead';
-import type { SupabaseLeadSearchProfileRepository } from '@/modules/leads/infra/repositories/supabase-lead-search-profile.repository';
+import { SupabaseLeadSearchProfileRepository } from '@/modules/leads/infra/repositories/supabase-lead-search-profile.repository';
 
 type LeadRow = {
   id: string;

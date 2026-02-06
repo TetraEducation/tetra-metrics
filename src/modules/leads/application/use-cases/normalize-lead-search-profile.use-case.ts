@@ -30,6 +30,7 @@ export interface NormalizeLeadSearchProfileInput {
   metadata?: Record<string, unknown>;
   jobName?: string;
   allowConcurrentRun?: boolean;
+  fromStart?: boolean;
 }
 
 export interface NormalizeLeadSearchProfileResult {
@@ -39,6 +40,7 @@ export interface NormalizeLeadSearchProfileResult {
   processedLeads: number;
   cursor: JobRunCursor | null;
   skipped: boolean;
+  completionReason?: 'no_questions_found' | 'no_answers_found' | null;
 }
 
 @Injectable()
@@ -54,6 +56,7 @@ export class NormalizeLeadSearchProfileUseCase {
     const batchSize = Math.max(1, Math.floor(input.batchSize));
     const jobName = input.jobName?.trim() || JOB_NAME;
     const dryRun = input.dryRun ?? false;
+    const fromStart = input.fromStart ?? false;
 
     if (!input.allowConcurrentRun) {
       const hasRunningJob = await this.port.hasRunningJobRun(jobName);
@@ -77,12 +80,24 @@ export class NormalizeLeadSearchProfileUseCase {
           processedLeads: 0,
           cursor: null,
           skipped: true,
+          completionReason: null,
         };
       }
     }
 
-    const resumeFrom = await this.resolveResumeRun(jobName);
+    const resumeFrom = fromStart ? null : await this.resolveResumeRun(jobName);
     const baseCursor = resumeFrom?.cursor ?? null;
+
+    this.logger.log({
+      event: 'lead_search_profile_normalization_started',
+      jobName,
+      batchSize,
+      dryRun,
+      fromStart,
+      allowConcurrentRun: Boolean(input.allowConcurrentRun),
+      resumeFromJobRunId: resumeFrom?.id ?? null,
+      baseCursor,
+    });
 
     let run: Awaited<ReturnType<NormalizeLeadSearchProfilePort['createJobRun']>>;
     try {
@@ -118,6 +133,7 @@ export class NormalizeLeadSearchProfileUseCase {
           processedLeads: 0,
           cursor: null,
           skipped: true,
+          completionReason: null,
         };
       }
 
@@ -143,15 +159,35 @@ export class NormalizeLeadSearchProfileUseCase {
     });
 
     try {
-      const questionIdToField = await this.resolveQuestionIdToFieldMap();
+      const resolvedQuestions = await this.resolveQuestionIdToFieldMap();
+      const questionIdToField = resolvedQuestions.mapping;
       const questionIds = [...questionIdToField.keys()];
+
+      this.logger.log({
+        event: 'lead_search_profile_normalization_questions_resolved',
+        jobName,
+        requestedKeysCount: resolvedQuestions.requestedKeys.length,
+        matchedKeysCount: resolvedQuestions.matchedKeys.length,
+        unmatchedKeysCount: resolvedQuestions.unmatchedKeys.length,
+        questionIdsCount: questionIds.length,
+        unmatchedKeys: resolvedQuestions.unmatchedKeys,
+      });
+
       if (questionIds.length === 0) {
+        this.logger.warn({
+          event: 'lead_search_profile_normalization_no_questions_found',
+          jobName,
+          requestedKeysCount: resolvedQuestions.requestedKeys.length,
+          unmatchedKeysCount: resolvedQuestions.unmatchedKeys.length,
+          unmatchedKeys: resolvedQuestions.unmatchedKeys,
+        });
+
         await this.port.markJobRunCompleted({
           id: run.id,
           cursor,
           processedRows,
           processedLeads,
-          meta: { reason: 'no_questions_found' },
+          meta: { reason: 'no_questions_found', unmatchedKeys: resolvedQuestions.unmatchedKeys },
         });
 
         this.observability.info('normalize_lead_search_profile_completed', {
@@ -173,8 +209,13 @@ export class NormalizeLeadSearchProfileUseCase {
           processedLeads,
           cursor,
           skipped: false,
+          completionReason: 'no_questions_found',
         };
       }
+
+      const cursorAtStart = cursor;
+      const processedRowsAtStart = processedRows;
+      const processedLeadsAtStart = processedLeads;
 
       for (;;) {
         const batch = await this.port.readFormAnswersBatch({
@@ -183,7 +224,47 @@ export class NormalizeLeadSearchProfileUseCase {
           limit: batchSize,
         });
 
-        if (batch.length === 0) break;
+        if (batch.length === 0) {
+          // Caso comum: nada novo para processar. Importante deixar explícito para observabilidade.
+          if (processedRows === processedRowsAtStart && processedLeads === processedLeadsAtStart) {
+            this.logger.warn({
+              event: 'lead_search_profile_normalization_no_answers_found',
+              jobName,
+              questionIdsCount: questionIds.length,
+              batchSize,
+              cursorAtStart,
+              cursorCurrent: cursor,
+              processedRows,
+              processedLeads,
+            });
+
+            await this.port.markJobRunCompleted({
+              id: run.id,
+              cursor,
+              processedRows,
+              processedLeads,
+              meta: {
+                reason: 'no_answers_found',
+                cursorAtStart,
+                questionIdsCount: questionIds.length,
+                batchSize,
+                dryRun,
+              },
+            });
+
+            return {
+              jobRunId: run.id,
+              resumedFromJobRunId: resumeFrom?.id ?? null,
+              processedRows,
+              processedLeads,
+              cursor,
+              skipped: false,
+              completionReason: 'no_answers_found',
+            };
+          }
+
+          break;
+        }
 
         const parsed = this.buildProfileBatch(batch, questionIdToField, unknownNormalizationCounts);
         const payload = parsed.payload;
@@ -247,6 +328,7 @@ export class NormalizeLeadSearchProfileUseCase {
         processedLeads,
         cursor,
         skipped: false,
+        completionReason: null,
       };
     } catch (error) {
       const errorMessage =
@@ -294,27 +376,44 @@ export class NormalizeLeadSearchProfileUseCase {
   }
 
   private async resolveQuestionIdToFieldMap(): Promise<
-    Map<string, keyof LeadSearchProfileUpsertPayload>
+    {
+      mapping: Map<string, Array<keyof LeadSearchProfileUpsertPayload>>;
+      requestedKeys: string[];
+      matchedKeys: string[];
+      unmatchedKeys: string[];
+    }
   > {
     const allKeys = [...new Set(Object.values(PROFILE_FIELD_TO_QUESTION_KEYS).flat())];
     const resolved = await this.port.resolveQuestionIdsByNormalizedKeys(allKeys);
-    const mapping = new Map<string, keyof LeadSearchProfileUpsertPayload>();
+    const mapping = new Map<string, Array<keyof LeadSearchProfileUpsertPayload>>();
+
+    const matchedKeys: string[] = [];
+    const unmatchedKeys: string[] = [];
+    for (const key of allKeys) {
+      const ids = resolved[key] ?? [];
+      if (ids.length > 0) matchedKeys.push(key);
+      else unmatchedKeys.push(key);
+    }
 
     for (const [field, keys] of Object.entries(PROFILE_FIELD_TO_QUESTION_KEYS)) {
       for (const key of keys) {
         const questionIds = resolved[key] ?? [];
         for (const questionId of questionIds) {
-          mapping.set(questionId, field as keyof LeadSearchProfileUpsertPayload);
+          const typedField = field as keyof LeadSearchProfileUpsertPayload;
+          const existing = mapping.get(questionId) ?? [];
+          if (!existing.includes(typedField)) {
+            mapping.set(questionId, [...existing, typedField]);
+          }
         }
       }
     }
 
-    return mapping;
+    return { mapping, requestedKeys: allKeys, matchedKeys, unmatchedKeys };
   }
 
   private buildProfileBatch(
     batch: FormAnswerBatchItem[],
-    questionIdToField: Map<string, keyof LeadSearchProfileUpsertPayload>,
+    questionIdToField: Map<string, Array<keyof LeadSearchProfileUpsertPayload>>,
     unknownNormalizationCounts: UnknownNormalizationCounts,
   ): {
     payload: LeadSearchProfileUpsertPayload[];
@@ -325,13 +424,26 @@ export class NormalizeLeadSearchProfileUseCase {
 
     for (const answer of batch) {
       if (!answer.leadId) continue;
-      const field = questionIdToField.get(answer.questionId);
-      if (!field) continue;
+      const fields = questionIdToField.get(answer.questionId);
+      if (!fields || fields.length === 0) continue;
 
       const current = updates.get(answer.leadId) ?? { leadId: answer.leadId };
-      const parsed = this.parseFieldValue(field, answer, updatedUnknownCounts);
-      current[field] = parsed.value as never;
-      updatedUnknownCounts = parsed.unknownNormalizationCounts;
+      // Otimização/consistência: para perguntas de faixa, parsear uma vez e preencher min+max.
+      if (fields.includes('salaryMin') || fields.includes('salaryMax')) {
+        const range = parseSalaryRange(answer.valueText);
+        if (fields.includes('salaryMin')) current.salaryMin = range.salary_min;
+        if (fields.includes('salaryMax')) current.salaryMax = range.salary_max;
+      } else if (fields.includes('ageMin') || fields.includes('ageMax')) {
+        const range = parseAgeRange(answer.valueText);
+        if (fields.includes('ageMin')) current.ageMin = range.age_min;
+        if (fields.includes('ageMax')) current.ageMax = range.age_max;
+      } else {
+        for (const field of fields) {
+          const parsed = this.parseFieldValue(field, answer, updatedUnknownCounts);
+          current[field] = parsed.value as never;
+          updatedUnknownCounts = parsed.unknownNormalizationCounts;
+        }
+      }
       updates.set(answer.leadId, current);
     }
 

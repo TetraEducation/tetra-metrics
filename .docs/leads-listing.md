@@ -6,6 +6,13 @@
 
 Endpoint de listagem paginada de leads (novo controller `LeadsListingController`).
 
+**Implementação (referência)**
+
+- Controller: `src/modules/leads/interface/http/leads-listing.controller.ts`
+- DTO (query params): `src/modules/leads/application/dto/leads-listing.dto.ts`
+- Service: `src/modules/leads/application/services/leads-listing.service.ts`
+- Repositório (Supabase): `src/modules/leads/infra/repositories/supabase-leads.repository.ts` (`listLeads`)
+
 **Parâmetros de paginação**
 
 | Parâmetro | Tipo   | Obrigatório | Descrição                                    |
@@ -34,6 +41,19 @@ Endpoint de listagem paginada de leads (novo controller `LeadsListingController`
 | `lastActivityTo`   | string | não         | Filtra pela data/hora máxima de última atividade (ISO 8601).        |
 | `orderBy`          | string | não         | Campo de ordenação (`last_activity_at`, `created_at`, `full_name`). |
 | `orderDirection`   | string | não         | Direção da ordenação (`asc` ou `desc`).                             |
+
+**DTO de response (shape atual)**
+
+O endpoint retorna `LeadsListingResult<LeadListingItem>`:
+
+- `data`: array de itens
+  - `nome: string | null`
+  - `email: string | null`
+  - `telefone: string | null`
+  - `ultimoContatoComercial: string | null` (timestamp ISO)
+- `page: number`
+- `perPage: number`
+- `total: number`
 
 **Exemplo de request**
 

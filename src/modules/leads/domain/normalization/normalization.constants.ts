@@ -1,16 +1,39 @@
 export const PROFILE_FIELD_TO_QUESTION_KEYS = {
-  salaryMin: ['salary-min', 'salary-minimum', 'salario-minimo', 'pretensao-salarial-minima'],
-  salaryMax: ['salary-max', 'salary-maximum', 'salario-maximo', 'pretensao-salarial-maxima'],
-  ageMin: ['age-min', 'idade-minima'],
-  ageMax: ['age-max', 'idade-maxima'],
-  gender: ['gender', 'genero', 'sexo'],
-  companySize: ['company-size', 'company-porte', 'porte-empresa', 'porte'],
-  educationLevel: ['education-level', 'schooling', 'escolaridade'],
+  salaryMin: [
+    'salary-min',
+    'salary-minimum',
+    'salario-minimo',
+    'pretensao-salarial-minima',
+    'qual-a-sua-renda-pessoal-mensal',
+  ],
+  salaryMax: [
+    'salary-max',
+    'salary-maximum',
+    'salario-maximo',
+    'pretensao-salarial-maxima',
+    'qual-a-sua-renda-pessoal-mensal',
+  ],
+  ageMin: ['age-min', 'idade-minima', 'qual-a-sua-faixa-etaria'],
+  ageMax: ['age-max', 'idade-maxima', 'qual-a-sua-faixa-etaria'],
+  gender: ['gender', 'genero', 'sexo', 'voce-e'],
+  companySize: [
+    'company-size',
+    'company-porte',
+    'porte-empresa',
+    'porte',
+    'qual-o-porte-da-empresa-em-que-trabalha-atualmente',
+  ],
+  educationLevel: [
+    'education-level',
+    'schooling',
+    'escolaridade',
+    'qual-a-sua-escolaridade',
+  ],
 } as const;
 
 export const GENDER_ALIASES = {
-  male: ['masculino', 'homem', 'm', 'male'],
-  female: ['feminino', 'mulher', 'f', 'female'],
+  male: ['masculino', 'homem', 'm', 'male', 'HOMEM'],
+  female: ['feminino', 'mulher', 'f', 'female', 'MULHER'],
   non_binary: ['nao binario', 'não binário', 'non binary', 'non-binary'],
   other: ['outro', 'outra', 'outros', 'other'],
   prefer_not_to_say: [
@@ -27,6 +50,7 @@ export const COMPANY_SIZE_ALIASES = {
   medium: ['media', 'médio porte', 'medio porte', 'medium'],
   large: ['grande', 'grande porte', 'large'],
   enterprise: ['enterprise', 'corporacao', 'corporação', 'corporate'],
+  unemployed: ['nao estou trabalhando no momento', 'não estou trabalhando no momento'],
 } as const;
 
 export const EDUCATION_LEVEL_ALIASES = {

@@ -50,15 +50,15 @@ export function formatAgeRange(range: AgeRange): string | null {
 }
 
 export function normalizeGender(valueText: string | null | undefined): string | null {
-  return normalizeByAliases(valueText, GENDER_ALIASES);
+  return normalizeByAliasesExact(valueText, GENDER_ALIASES);
 }
 
 export function normalizeCompanySize(valueText: string | null | undefined): string | null {
-  return normalizeByAliases(valueText, COMPANY_SIZE_ALIASES);
+  return normalizeByAliasesContains(valueText, COMPANY_SIZE_ALIASES);
 }
 
 export function normalizeEducationLevel(valueText: string | null | undefined): string | null {
-  return normalizeByAliases(valueText, EDUCATION_LEVEL_ALIASES);
+  return normalizeByAliasesContains(valueText, EDUCATION_LEVEL_ALIASES);
 }
 
 export function createUnknownNormalizationCounts(): UnknownNormalizationCounts {
@@ -115,6 +115,11 @@ function parseNumericRange(valueText: string | null | undefined): {
   }
 
   if (/^(acima de|a partir de|mais de|>=?)/i.test(comparable)) {
+    return { min: single, max: null };
+  }
+
+  // Casos comuns em pesquisas: "65 anos ou mais", "R$6.000,00 ou mais" etc.
+  if (/\bou\s+mais\b/i.test(comparable)) {
     return { min: single, max: null };
   }
 
@@ -186,7 +191,7 @@ function parseNumberToken(token: string): number | null {
   return isThousand ? parsed * 1000 : parsed;
 }
 
-function normalizeByAliases(
+function normalizeByAliasesExact(
   valueText: string | null | undefined,
   aliases: Record<string, readonly string[]>,
 ): string | null {
@@ -202,12 +207,49 @@ function normalizeByAliases(
   return null;
 }
 
+function normalizeByAliasesContains(
+  valueText: string | null | undefined,
+  aliases: Record<string, readonly string[]>,
+): string | null {
+  const normalizedInput = normalizeComparableTokens(valueText);
+  if (!normalizedInput) return null;
+
+  const haystack = ` ${normalizedInput} `;
+  let bestMatch: { canonical: string; needleLength: number } | null = null;
+  for (const [canonical, entries] of Object.entries(aliases)) {
+    for (const entry of entries) {
+      const needle = normalizeComparableTokens(entry);
+      if (!needle) continue;
+      if (haystack.includes(` ${needle} `)) {
+        const candidate = { canonical, needleLength: needle.length };
+        if (!bestMatch || candidate.needleLength > bestMatch.needleLength) {
+          bestMatch = candidate;
+        }
+      }
+    }
+  }
+
+  return bestMatch?.canonical ?? null;
+}
+
 function normalizeComparableText(value: string | null | undefined): string {
   return (
     normalizeText(value)
       ?.normalize('NFKD')
       .replace(/[\u0300-\u036f]/g, '')
       .toLowerCase()
+      .replace(/\s+/g, ' ')
+      .trim() ?? ''
+  );
+}
+
+function normalizeComparableTokens(value: string | null | undefined): string {
+  return (
+    normalizeText(value)
+      ?.normalize('NFKD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, ' ')
       .replace(/\s+/g, ' ')
       .trim() ?? ''
   );
