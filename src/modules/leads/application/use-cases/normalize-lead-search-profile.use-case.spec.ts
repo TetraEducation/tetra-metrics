@@ -1,0 +1,223 @@
+import { NormalizeLeadSearchProfileUseCase } from './normalize-lead-search-profile.use-case';
+import type {
+  FormAnswerBatchItem,
+  JobRunSnapshot,
+  NormalizeLeadSearchProfilePort,
+} from '@/modules/leads/application/ports/normalize-lead-search-profile.port';
+
+const QUESTION_ID = 'q-gender-1';
+const JOB_NAME = 'normalize-lead-search-profile';
+
+function buildBatchItem(params: Partial<FormAnswerBatchItem>): FormAnswerBatchItem {
+  return {
+    id: 'answer-1',
+    questionId: QUESTION_ID,
+    createdAt: '2025-01-01T00:00:00.000Z',
+    leadId: 'lead-1',
+    valueText: 'feminino',
+    valueNumber: null,
+    ...params,
+  };
+}
+
+function buildJobRunSnapshot(overrides: Partial<JobRunSnapshot> = {}): JobRunSnapshot {
+  return {
+    id: 'run-1',
+    jobName: JOB_NAME,
+    status: 'running',
+    cursor: null,
+    processedRows: 0,
+    processedLeads: 0,
+    meta: {},
+    ...overrides,
+  };
+}
+
+type PortMock = jest.Mocked<NormalizeLeadSearchProfilePort>;
+
+function createPortMock(): PortMock {
+  return {
+    resolveQuestionIdsByNormalizedKeys: jest.fn().mockResolvedValue({ gender: [QUESTION_ID] }),
+    readFormAnswersBatch: jest.fn().mockResolvedValue([]),
+    upsertLeadSearchProfile: jest.fn().mockResolvedValue(undefined),
+    findLatestJobRunByStatuses: jest.fn().mockResolvedValue(null),
+    createJobRun: jest.fn().mockResolvedValue(buildJobRunSnapshot()),
+    hasRunningJobRun: jest.fn().mockResolvedValue(false),
+    updateJobRunProgress: jest.fn().mockResolvedValue(undefined),
+    markJobRunFailed: jest.fn().mockResolvedValue(undefined),
+    markJobRunCompleted: jest.fn().mockResolvedValue(undefined),
+  };
+}
+
+describe('NormalizeLeadSearchProfileUseCase', () => {
+  it('retoma de job_runs com status running e usa cursor/progresso como base', async () => {
+    const port = createPortMock();
+    const runningRun = buildJobRunSnapshot({
+      id: 'run-running',
+      status: 'running',
+      cursor: { createdAt: '2025-01-05T00:00:00.000Z', id: 'cursor-running' },
+      processedRows: 10,
+      processedLeads: 4,
+    });
+
+    port.findLatestJobRunByStatuses.mockResolvedValueOnce(runningRun);
+    port.createJobRun.mockResolvedValueOnce(
+      buildJobRunSnapshot({
+        id: 'run-new',
+        cursor: runningRun.cursor,
+        processedRows: runningRun.processedRows,
+        processedLeads: runningRun.processedLeads,
+      }),
+    );
+
+    const useCase = new NormalizeLeadSearchProfileUseCase(port);
+    await useCase.execute({ batchSize: 50 });
+
+    expect(port.findLatestJobRunByStatuses).toHaveBeenCalledWith({
+      jobName: JOB_NAME,
+      statuses: ['running', 'failed'],
+    });
+    expect(port.createJobRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        cursor: runningRun.cursor,
+        processedRows: 10,
+        processedLeads: 4,
+        meta: expect.objectContaining({ resumedFromJobRunId: 'run-running' }),
+      }),
+    );
+  });
+
+  it('retoma de job_runs com status failed quando não há running', async () => {
+    const port = createPortMock();
+    const failedRun = buildJobRunSnapshot({
+      id: 'run-failed',
+      status: 'failed',
+      cursor: { createdAt: '2025-01-06T00:00:00.000Z', id: 'cursor-failed' },
+      processedRows: 7,
+      processedLeads: 3,
+    });
+
+    port.findLatestJobRunByStatuses.mockResolvedValueOnce(failedRun);
+
+    const useCase = new NormalizeLeadSearchProfileUseCase(port);
+    await useCase.execute({ batchSize: 25 });
+
+    expect(port.createJobRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        cursor: failedRun.cursor,
+        processedRows: 7,
+        processedLeads: 3,
+        meta: expect.objectContaining({ resumedFromJobRunId: 'run-failed' }),
+      }),
+    );
+  });
+
+  it('faz fallback para último completed quando não encontra running/failed', async () => {
+    const port = createPortMock();
+    const completedRun = buildJobRunSnapshot({
+      id: 'run-completed',
+      status: 'completed',
+      cursor: { createdAt: '2025-01-07T00:00:00.000Z', id: 'cursor-completed' },
+      processedRows: 20,
+      processedLeads: 10,
+    });
+
+    port.findLatestJobRunByStatuses
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(completedRun);
+
+    const useCase = new NormalizeLeadSearchProfileUseCase(port);
+    await useCase.execute({ batchSize: 100 });
+
+    expect(port.findLatestJobRunByStatuses).toHaveBeenNthCalledWith(1, {
+      jobName: JOB_NAME,
+      statuses: ['running', 'failed'],
+    });
+    expect(port.findLatestJobRunByStatuses).toHaveBeenNthCalledWith(2, {
+      jobName: JOB_NAME,
+      statuses: ['completed'],
+    });
+    expect(port.createJobRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        cursor: completedRun.cursor,
+        processedRows: 20,
+        processedLeads: 10,
+      }),
+    );
+  });
+
+  it('atualiza cursor incrementalmente por batch e contabiliza processed_rows/processed_leads', async () => {
+    const port = createPortMock();
+    port.readFormAnswersBatch
+      .mockResolvedValueOnce([
+        buildBatchItem({ id: 'a-1', leadId: 'lead-1', createdAt: '2025-02-01T00:00:00.000Z' }),
+        buildBatchItem({ id: 'a-2', leadId: 'lead-2', createdAt: '2025-02-01T00:00:01.000Z' }),
+      ])
+      .mockResolvedValueOnce([
+        buildBatchItem({ id: 'a-3', leadId: 'lead-3', createdAt: '2025-02-01T00:00:02.000Z' }),
+      ])
+      .mockResolvedValueOnce([]);
+
+    const useCase = new NormalizeLeadSearchProfileUseCase(port);
+    const result = await useCase.execute({ batchSize: 2 });
+
+    expect(port.updateJobRunProgress).toHaveBeenNthCalledWith(1, {
+      id: 'run-1',
+      cursor: { createdAt: '2025-02-01T00:00:01.000Z', id: 'a-2' },
+      processedRows: 2,
+      processedLeads: 2,
+    });
+    expect(port.updateJobRunProgress).toHaveBeenNthCalledWith(2, {
+      id: 'run-1',
+      cursor: { createdAt: '2025-02-01T00:00:02.000Z', id: 'a-3' },
+      processedRows: 3,
+      processedLeads: 3,
+    });
+    expect(port.markJobRunCompleted).toHaveBeenCalledWith({
+      id: 'run-1',
+      cursor: { createdAt: '2025-02-01T00:00:02.000Z', id: 'a-3' },
+      processedRows: 3,
+      processedLeads: 3,
+    });
+    expect(result).toMatchObject({
+      processedRows: 3,
+      processedLeads: 3,
+      cursor: { createdAt: '2025-02-01T00:00:02.000Z', id: 'a-3' },
+      skipped: false,
+    });
+  });
+
+  it('marca como failed preservando cursor, error_message e progresso em exceção', async () => {
+    const port = createPortMock();
+    port.readFormAnswersBatch
+      .mockResolvedValueOnce([
+        buildBatchItem({ id: 'a-1', leadId: 'lead-1', createdAt: '2025-03-01T00:00:00.000Z' }),
+      ])
+      .mockResolvedValueOnce([
+        buildBatchItem({ id: 'a-2', leadId: 'lead-2', createdAt: '2025-03-01T00:00:01.000Z' }),
+      ]);
+    port.upsertLeadSearchProfile
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error('falha no upsert'));
+
+    const useCase = new NormalizeLeadSearchProfileUseCase(port);
+
+    await expect(useCase.execute({ batchSize: 1 })).rejects.toThrow('falha no upsert');
+
+    expect(port.updateJobRunProgress).toHaveBeenCalledTimes(1);
+    expect(port.updateJobRunProgress).toHaveBeenCalledWith({
+      id: 'run-1',
+      cursor: { createdAt: '2025-03-01T00:00:00.000Z', id: 'a-1' },
+      processedRows: 1,
+      processedLeads: 1,
+    });
+    expect(port.markJobRunFailed).toHaveBeenCalledWith({
+      id: 'run-1',
+      cursor: { createdAt: '2025-03-01T00:00:00.000Z', id: 'a-1' },
+      processedRows: 1,
+      processedLeads: 1,
+      errorMessage: 'falha no upsert',
+    });
+    expect(port.markJobRunCompleted).not.toHaveBeenCalled();
+  });
+});
