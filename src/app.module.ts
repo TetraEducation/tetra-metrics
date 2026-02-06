@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { ScheduleModule } from '@nestjs/schedule';
 import { SupabaseModule } from '@/infra/supabase/supabase.module';
 import { LeadsModule } from '@/modules/leads/leads.module';
 import { IamModule } from '@/modules/iam/iam.modules';
@@ -11,6 +12,7 @@ import { ImportsModule } from '@/modules/imports/imports.module';
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    ScheduleModule.forRoot(),
     SupabaseModule,
     LeadsModule,
     IamModule,

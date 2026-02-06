@@ -25,14 +25,16 @@ export interface NormalizeLeadSearchProfileInput {
   dryRun?: boolean;
   metadata?: Record<string, unknown>;
   jobName?: string;
+  allowConcurrentRun?: boolean;
 }
 
 export interface NormalizeLeadSearchProfileResult {
-  jobRunId: string;
+  jobRunId: string | null;
   resumedFromJobRunId: string | null;
   processedRows: number;
   processedLeads: number;
   cursor: JobRunCursor | null;
+  skipped: boolean;
 }
 
 @Injectable()
@@ -49,21 +51,55 @@ export class NormalizeLeadSearchProfileUseCase {
     const jobName = input.jobName?.trim() || JOB_NAME;
     const dryRun = input.dryRun ?? false;
 
+    if (!input.allowConcurrentRun) {
+      const hasRunningJob = await this.port.hasRunningJobRun(jobName);
+      if (hasRunningJob) {
+        this.logger.warn(
+          `Job ${jobName} já possui execução em andamento. Ignorando nova execução.`,
+        );
+        return {
+          jobRunId: null,
+          resumedFromJobRunId: null,
+          processedRows: 0,
+          processedLeads: 0,
+          cursor: null,
+          skipped: true,
+        };
+      }
+    }
+
     const resumeFrom = await this.resolveResumeRun(jobName);
     const baseCursor = resumeFrom?.cursor ?? null;
 
-    const run = await this.port.createJobRun({
-      jobName,
-      status: 'running',
-      cursor: baseCursor,
-      processedRows: resumeFrom?.processedRows ?? 0,
-      processedLeads: resumeFrom?.processedLeads ?? 0,
-      meta: {
-        dryRun,
-        resumedFromJobRunId: resumeFrom?.id ?? null,
-        ...(input.metadata ?? {}),
-      },
-    });
+    let run: Awaited<ReturnType<NormalizeLeadSearchProfilePort['createJobRun']>>;
+    try {
+      run = await this.port.createJobRun({
+        jobName,
+        status: 'running',
+        cursor: baseCursor,
+        processedRows: resumeFrom?.processedRows ?? 0,
+        processedLeads: resumeFrom?.processedLeads ?? 0,
+        meta: {
+          dryRun,
+          resumedFromJobRunId: resumeFrom?.id ?? null,
+          ...(input.metadata ?? {}),
+        },
+      });
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('lock lógico ativo')) {
+        this.logger.warn(`Job ${jobName} bloqueado por lock lógico em execução concorrente.`);
+        return {
+          jobRunId: null,
+          resumedFromJobRunId: null,
+          processedRows: 0,
+          processedLeads: 0,
+          cursor: null,
+          skipped: true,
+        };
+      }
+
+      throw error;
+    }
 
     let cursor = run.cursor;
     let processedRows = run.processedRows;
@@ -88,6 +124,7 @@ export class NormalizeLeadSearchProfileUseCase {
           processedRows,
           processedLeads,
           cursor,
+          skipped: false,
         };
       }
 
@@ -142,6 +179,7 @@ export class NormalizeLeadSearchProfileUseCase {
         processedRows,
         processedLeads,
         cursor,
+        skipped: false,
       };
     } catch (error) {
       const errorMessage =

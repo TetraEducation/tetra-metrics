@@ -57,6 +57,7 @@ export interface NormalizeLeadSearchProfilePort {
     processedLeads: number;
     meta: Record<string, unknown>;
   }): Promise<JobRunSnapshot>;
+  hasRunningJobRun(jobName: string): Promise<boolean>;
   updateJobRunProgress(params: {
     id: string;
     cursor: JobRunCursor | null;
