@@ -1,4 +1,8 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
+import {
+  OBSERVABILITY_ADAPTER,
+  type ObservabilityAdapter,
+} from '@/infra/observability/observability.adapter';
 import {
   type FormAnswerBatchItem,
   type JobRunCursor,
@@ -39,11 +43,11 @@ export interface NormalizeLeadSearchProfileResult {
 
 @Injectable()
 export class NormalizeLeadSearchProfileUseCase {
-  private readonly logger = new Logger(NormalizeLeadSearchProfileUseCase.name);
-
   constructor(
     @Inject(NORMALIZE_LEAD_SEARCH_PROFILE_PORT)
     private readonly port: NormalizeLeadSearchProfilePort,
+    @Inject(OBSERVABILITY_ADAPTER)
+    private readonly observability: ObservabilityAdapter,
   ) {}
 
   async execute(input: NormalizeLeadSearchProfileInput): Promise<NormalizeLeadSearchProfileResult> {
@@ -54,9 +58,18 @@ export class NormalizeLeadSearchProfileUseCase {
     if (!input.allowConcurrentRun) {
       const hasRunningJob = await this.port.hasRunningJobRun(jobName);
       if (hasRunningJob) {
-        this.logger.warn(
-          `Job ${jobName} já possui execução em andamento. Ignorando nova execução.`,
-        );
+        this.observability.warn('normalize_lead_search_profile_skipped_running_job', {
+          jobRunId: null,
+          step: 'start',
+          batchSize,
+          cursorCreatedAt: null,
+          cursorId: null,
+          processedRows: 0,
+          processedLeads: 0,
+          unknownEducationCount: 0,
+          jobName,
+        });
+
         return {
           jobRunId: null,
           resumedFromJobRunId: null,
@@ -87,7 +100,17 @@ export class NormalizeLeadSearchProfileUseCase {
       });
     } catch (error) {
       if (error instanceof Error && error.message.includes('lock lógico ativo')) {
-        this.logger.warn(`Job ${jobName} bloqueado por lock lógico em execução concorrente.`);
+        this.observability.warn('normalize_lead_search_profile_skipped_lock', {
+          jobRunId: null,
+          step: 'start',
+          batchSize,
+          cursorCreatedAt: null,
+          cursorId: null,
+          processedRows: 0,
+          processedLeads: 0,
+          unknownEducationCount: 0,
+          jobName,
+        });
         return {
           jobRunId: null,
           resumedFromJobRunId: null,
@@ -106,6 +129,19 @@ export class NormalizeLeadSearchProfileUseCase {
     let processedLeads = run.processedLeads;
     let unknownNormalizationCounts = createUnknownNormalizationCounts();
 
+    this.observability.info('normalize_lead_search_profile_started', {
+      jobRunId: run.id,
+      step: 'start',
+      batchSize,
+      cursorCreatedAt: cursor?.createdAt ?? null,
+      cursorId: cursor?.id ?? null,
+      processedRows,
+      processedLeads,
+      unknownEducationCount: this.getUnknownEducationCount(unknownNormalizationCounts),
+      resumedFromJobRunId: resumeFrom?.id ?? null,
+      dryRun,
+    });
+
     try {
       const questionIdToField = await this.resolveQuestionIdToFieldMap();
       const questionIds = [...questionIdToField.keys()];
@@ -116,6 +152,18 @@ export class NormalizeLeadSearchProfileUseCase {
           processedRows,
           processedLeads,
           meta: { reason: 'no_questions_found' },
+        });
+
+        this.observability.info('normalize_lead_search_profile_completed', {
+          jobRunId: run.id,
+          step: 'complete',
+          batchSize,
+          cursorCreatedAt: cursor?.createdAt ?? null,
+          cursorId: cursor?.id ?? null,
+          processedRows,
+          processedLeads,
+          unknownEducationCount: this.getUnknownEducationCount(unknownNormalizationCounts),
+          reason: 'no_questions_found',
         });
 
         return {
@@ -159,18 +207,37 @@ export class NormalizeLeadSearchProfileUseCase {
           processedRows,
           processedLeads,
         });
-      }
 
-      this.logger.log({
-        event: 'lead_search_profile_normalization_unknown_values',
-        unknownNormalizationCounts,
-      });
+        this.observability.info('normalize_lead_search_profile_progress', {
+          jobRunId: run.id,
+          step: 'batch_progress',
+          batchSize,
+          cursorCreatedAt: cursor.createdAt,
+          cursorId: cursor.id,
+          processedRows,
+          processedLeads,
+          unknownEducationCount: this.getUnknownEducationCount(unknownNormalizationCounts),
+          batchRows: batch.length,
+          batchLeads: payload.length,
+        });
+      }
 
       await this.port.markJobRunCompleted({
         id: run.id,
         cursor,
         processedRows,
         processedLeads,
+      });
+
+      this.observability.info('normalize_lead_search_profile_completed', {
+        jobRunId: run.id,
+        step: 'complete',
+        batchSize,
+        cursorCreatedAt: cursor?.createdAt ?? null,
+        cursorId: cursor?.id ?? null,
+        processedRows,
+        processedLeads,
+        unknownEducationCount: this.getUnknownEducationCount(unknownNormalizationCounts),
       });
 
       return {
@@ -193,7 +260,21 @@ export class NormalizeLeadSearchProfileUseCase {
         errorMessage,
       });
 
-      this.logger.error(`Falha ao normalizar lead_search_profile: ${errorMessage}`, error);
+      this.observability.error(
+        'normalize_lead_search_profile_failed',
+        {
+          jobRunId: run.id,
+          step: 'failed',
+          batchSize,
+          cursorCreatedAt: cursor?.createdAt ?? null,
+          cursorId: cursor?.id ?? null,
+          processedRows,
+          processedLeads,
+          unknownEducationCount: this.getUnknownEducationCount(unknownNormalizationCounts),
+          errorMessage,
+        },
+        error,
+      );
       throw error;
     }
   }
@@ -258,6 +339,10 @@ export class NormalizeLeadSearchProfileUseCase {
       payload: [...updates.values()],
       unknownNormalizationCounts: updatedUnknownCounts,
     };
+  }
+
+  private getUnknownEducationCount(counts: UnknownNormalizationCounts): number {
+    return Object.values(counts.educationLevel).reduce((acc, value) => acc + value, 0);
   }
 
   private parseFieldValue(
