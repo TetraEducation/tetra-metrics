@@ -16,6 +16,11 @@ export interface AgeRange {
   age_max: number | null;
 }
 
+interface NumericRange {
+  min: number | null;
+  max: number | null;
+}
+
 export type UnknownNormalizationCounts = Record<NormalizableField, Record<string, number>>;
 
 const RANGE_SEPARATOR_REGEX = /(?:\ba\b|até|ate|-|–|—|to)/i;
@@ -34,6 +39,14 @@ export function parseAgeRange(valueText: string | null | undefined): AgeRange {
     age_min: min,
     age_max: max,
   };
+}
+
+export function formatSalaryRange(range: SalaryRange): string | null {
+  return formatNumericRange({ min: range.salary_min, max: range.salary_max });
+}
+
+export function formatAgeRange(range: AgeRange): string | null {
+  return formatNumericRange({ min: range.age_min, max: range.age_max });
 }
 
 export function normalizeGender(valueText: string | null | undefined): string | null {
@@ -110,6 +123,30 @@ function parseNumericRange(valueText: string | null | undefined): {
   }
 
   return { min: single, max: single };
+}
+
+function formatNumericRange(range: NumericRange): string | null {
+  const min = normalizeRangeBound(range.min);
+  const max = normalizeRangeBound(range.max);
+
+  if (min === null && max === null) return null;
+  if (min === null) return `até ${formatNumber(max)}`;
+  if (max === null) return `acima de ${formatNumber(min)}`;
+  if (min === max) return formatNumber(min);
+
+  return `${formatNumber(min)} a ${formatNumber(max)}`;
+}
+
+function normalizeRangeBound(value: number | null): number | null {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return null;
+  return value;
+}
+
+function formatNumber(value: number | null): string {
+  if (value === null) return '';
+  if (Number.isInteger(value)) return String(value);
+
+  return value.toString();
 }
 
 function extractNumbers(valueText: string): number[] {
