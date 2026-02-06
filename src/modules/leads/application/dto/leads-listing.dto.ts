@@ -51,6 +51,14 @@ export class LeadsListingSearchDto {
 
   @IsOptional()
   @IsString()
+  salaryMin?: string;
+
+  @IsOptional()
+  @IsString()
+  salaryMax?: string;
+
+  @IsOptional()
+  @IsString()
   lastActivityFrom?: string;
 
   @IsOptional()

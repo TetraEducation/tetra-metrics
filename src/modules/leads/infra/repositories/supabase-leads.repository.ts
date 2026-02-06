@@ -407,10 +407,17 @@ export class SupabaseLeadsRepository implements LeadsRepositoryPort {
       selectParts.push('lead_tags!inner(tag_id)');
     }
     if (salaryQuestionIds) {
-      selectParts.push('form_submissions!inner(id, form_answers!inner(question_id, value_text))');
+      // Para filtrar por salário textual, só precisamos do join; não precisamos retornar value_text.
+      selectParts.push('form_submissions!inner(id, form_answers!inner(question_id))');
     }
 
-    let query = this.supabase.from('leads').select(selectParts.join(', '), { count: 'exact' });
+    const shouldAvoidExactCount =
+      Boolean(params.name) || Boolean(tagIds) || Boolean(salaryQuestionIds) || Boolean(params.lastActivityFrom) || Boolean(params.lastActivityTo);
+    const countStrategy = shouldAvoidExactCount ? 'planned' : 'exact';
+
+    let query = this.supabase
+      .from('leads')
+      .select(selectParts.join(', '), { count: countStrategy });
 
     if (params.name) {
       const nameSearch = normalizeText(params.name);
@@ -432,11 +439,11 @@ export class SupabaseLeadsRepository implements LeadsRepositoryPort {
     }
 
     if (salaryQuestionIds) {
-      const raw = params.salaryRange?.trim() ?? '';
-      const pattern = `%${this.escapeLikePattern(raw)}%`;
-      query = query
-        .in('form_submissions.form_answers.question_id', salaryQuestionIds)
-        .ilike('form_submissions.form_answers.value_text', pattern);
+      query = query.in('form_submissions.form_answers.question_id', salaryQuestionIds);
+      const salaryPatterns = this.buildSalaryTextPatterns(params);
+      for (const pattern of salaryPatterns) {
+        query = query.ilike('form_submissions.form_answers.value_text', pattern);
+      }
     }
 
     if (leadIdsFilter) {
@@ -489,7 +496,8 @@ export class SupabaseLeadsRepository implements LeadsRepositoryPort {
       selectParts.push('lead_tags!inner(tag_id)');
     }
     if (salaryQuestionIds) {
-      selectParts.push('form_submissions!inner(id, form_answers!inner(question_id, value_text))');
+      // Para filtrar por salário textual, só precisamos do join; não precisamos selecionar value_text.
+      selectParts.push('form_submissions!inner(id, form_answers!inner(question_id))');
     }
 
     let query = this.supabase.from('leads').select(selectParts.join(', '));
@@ -514,11 +522,11 @@ export class SupabaseLeadsRepository implements LeadsRepositoryPort {
     }
 
     if (salaryQuestionIds) {
-      const raw = params.salaryRange?.trim() ?? '';
-      const pattern = `%${this.escapeLikePattern(raw)}%`;
-      query = query
-        .in('form_submissions.form_answers.question_id', salaryQuestionIds)
-        .ilike('form_submissions.form_answers.value_text', pattern);
+      query = query.in('form_submissions.form_answers.question_id', salaryQuestionIds);
+      const salaryPatterns = this.buildSalaryTextPatterns(params);
+      for (const pattern of salaryPatterns) {
+        query = query.ilike('form_submissions.form_answers.value_text', pattern);
+      }
     }
 
     if (leadIdsFilter) {
@@ -689,19 +697,43 @@ export class SupabaseLeadsRepository implements LeadsRepositoryPort {
   }
 
   private async resolveSalaryQuestionIds(params: LeadsListingSearchDto): Promise<string[] | null> {
-    if (!params.salaryRange) return null;
+    if (!this.needsSalaryFilter(params)) return null;
 
     const { data: questions, error: questionsError } = await this.supabase
       .from('form_questions')
       .select('id')
       .or(
-        'key.eq.salary_range,key.eq.salaryRange,key.eq.faixa_salarial,label.ilike.%faixa salarial%,label.ilike.%salary%',
+        'key.eq.salary_range,key.eq.salaryRange,key.eq.faixa_salarial,' +
+          'key.ilike.%renda%,' +
+          'key.ilike.%salario%,' +
+          'key.ilike.%remuneracao%,' +
+          'label.ilike.%faixa salarial%,label.ilike.%salary%,label.ilike.%renda%,label.ilike.%salario%,label.ilike.%remuneracao%',
       );
 
     if (questionsError) throw questionsError;
     const questionIds = (questions ?? []).map((question) => question.id);
     if (questionIds.length === 0) return [];
     return questionIds;
+  }
+
+  private needsSalaryFilter(params: LeadsListingSearchDto): boolean {
+    return this.buildSalaryTextPatterns(params).length > 0;
+  }
+
+  private buildSalaryTextPatterns(params: LeadsListingSearchDto): string[] {
+    return [params.salaryRange, params.salaryMin, params.salaryMax]
+      .map((value) => this.normalizeSalaryFilterInput(value))
+      .filter((value): value is string => !!value)
+      .map((value) => `%${this.escapeLikePattern(value)}%`);
+  }
+
+  private normalizeSalaryFilterInput(value?: string): string | null {
+    if (!value) return null;
+    return value
+      .trim()
+      .replace(/\s+/g, ' ')
+      .replace(/\s?R\$\s?/gi, 'R$')
+      .replace(/,+/g, ',');
   }
 
   private isUuid(value: string): boolean {
