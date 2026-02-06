@@ -10,6 +10,7 @@ import type {
 } from '@/modules/leads/application/dto/leads-listing.dto';
 import type { LeadsRepositoryPort } from '@/modules/leads/application/ports/leads-repository.port';
 import type { Lead, LeadIdentifier } from '@/modules/leads/domain/lead';
+import type { SupabaseLeadSearchProfileRepository } from '@/modules/leads/infra/repositories/supabase-lead-search-profile.repository';
 
 type LeadRow = {
   id: string;
@@ -38,7 +39,10 @@ type LeadListingRow = {
 
 @Injectable()
 export class SupabaseLeadsRepository implements LeadsRepositoryPort {
-  constructor(@Inject(SUPABASE) private readonly supabase: SupabaseClient) {}
+  constructor(
+    @Inject(SUPABASE) private readonly supabase: SupabaseClient,
+    private readonly leadSearchProfileRepo: SupabaseLeadSearchProfileRepository,
+  ) {}
 
   async findIdentifiersByValues(values: string[]): Promise<LeadIdentifier[]> {
     if (values.length === 0) return [];
@@ -387,13 +391,11 @@ export class SupabaseLeadsRepository implements LeadsRepositoryPort {
       return { data: [], page, perPage, total: 0 };
     }
 
-    const salaryQuestionIds = await this.resolveSalaryQuestionIds(params);
-    if (salaryQuestionIds && salaryQuestionIds.length === 0) {
-      return { data: [], page, perPage, total: 0 };
-    }
-
     const leadIdsFilter = await this.resolveLeadIdsByFilters(params);
-    if (leadIdsFilter && leadIdsFilter.length === 0) {
+    const analyticsLeadIds =
+      await this.leadSearchProfileRepo.resolveLeadIdsByAnalyticsFilters(params);
+    const combinedLeadIdsFilter = this.intersectNullableLeadIds(leadIdsFilter, analyticsLeadIds);
+    if (combinedLeadIdsFilter && combinedLeadIdsFilter.length === 0) {
       return { data: [], page, perPage, total: 0 };
     }
 
@@ -406,13 +408,12 @@ export class SupabaseLeadsRepository implements LeadsRepositoryPort {
     if (tagIds) {
       selectParts.push('lead_tags!inner(tag_id)');
     }
-    if (salaryQuestionIds) {
-      // Para filtrar por salário textual, só precisamos do join; não precisamos retornar value_text.
-      selectParts.push('form_submissions!inner(id, form_answers!inner(question_id))');
-    }
 
     const shouldAvoidExactCount =
-      Boolean(params.name) || Boolean(tagIds) || Boolean(salaryQuestionIds) || Boolean(params.lastActivityFrom) || Boolean(params.lastActivityTo);
+      Boolean(params.name) ||
+      Boolean(tagIds) ||
+      Boolean(params.lastActivityFrom) ||
+      Boolean(params.lastActivityTo);
     const countStrategy = shouldAvoidExactCount ? 'planned' : 'exact';
 
     let query = this.supabase
@@ -438,16 +439,8 @@ export class SupabaseLeadsRepository implements LeadsRepositoryPort {
       query = query.in('lead_tags.tag_id', tagIds);
     }
 
-    if (salaryQuestionIds) {
-      query = query.in('form_submissions.form_answers.question_id', salaryQuestionIds);
-      const salaryPatterns = this.buildSalaryTextPatterns(params);
-      for (const pattern of salaryPatterns) {
-        query = query.ilike('form_submissions.form_answers.value_text', pattern);
-      }
-    }
-
-    if (leadIdsFilter) {
-      query = query.in('id', leadIdsFilter);
+    if (combinedLeadIdsFilter) {
+      query = query.in('id', combinedLeadIdsFilter);
     }
 
     const from = (page - 1) * perPage;
@@ -481,23 +474,17 @@ export class SupabaseLeadsRepository implements LeadsRepositoryPort {
       return [];
     }
 
-    const salaryQuestionIds = await this.resolveSalaryQuestionIds(params);
-    if (salaryQuestionIds && salaryQuestionIds.length === 0) {
-      return [];
-    }
-
     const leadIdsFilter = await this.resolveLeadIdsByFilters(params);
-    if (leadIdsFilter && leadIdsFilter.length === 0) {
+    const analyticsLeadIds =
+      await this.leadSearchProfileRepo.resolveLeadIdsByAnalyticsFilters(params);
+    const combinedLeadIdsFilter = this.intersectNullableLeadIds(leadIdsFilter, analyticsLeadIds);
+    if (combinedLeadIdsFilter && combinedLeadIdsFilter.length === 0) {
       return [];
     }
 
     const selectParts = ['id'];
     if (tagIds) {
       selectParts.push('lead_tags!inner(tag_id)');
-    }
-    if (salaryQuestionIds) {
-      // Para filtrar por salário textual, só precisamos do join; não precisamos selecionar value_text.
-      selectParts.push('form_submissions!inner(id, form_answers!inner(question_id))');
     }
 
     let query = this.supabase.from('leads').select(selectParts.join(', '));
@@ -521,16 +508,8 @@ export class SupabaseLeadsRepository implements LeadsRepositoryPort {
       query = query.in('lead_tags.tag_id', tagIds);
     }
 
-    if (salaryQuestionIds) {
-      query = query.in('form_submissions.form_answers.question_id', salaryQuestionIds);
-      const salaryPatterns = this.buildSalaryTextPatterns(params);
-      for (const pattern of salaryPatterns) {
-        query = query.ilike('form_submissions.form_answers.value_text', pattern);
-      }
-    }
-
-    if (leadIdsFilter) {
-      query = query.in('id', leadIdsFilter);
+    if (combinedLeadIdsFilter) {
+      query = query.in('id', combinedLeadIdsFilter);
     }
 
     query = query.order(orderBy, { ascending: orderDirection === 'asc' });
@@ -696,44 +675,16 @@ export class SupabaseLeadsRepository implements LeadsRepositoryPort {
     return [...tagIds];
   }
 
-  private async resolveSalaryQuestionIds(params: LeadsListingSearchDto): Promise<string[] | null> {
-    if (!this.needsSalaryFilter(params)) return null;
+  private intersectNullableLeadIds(
+    first: string[] | null,
+    second: string[] | null,
+  ): string[] | null {
+    if (!first && !second) return null;
+    if (!first) return second;
+    if (!second) return first;
 
-    const { data: questions, error: questionsError } = await this.supabase
-      .from('form_questions')
-      .select('id')
-      .or(
-        'key.eq.salary_range,key.eq.salaryRange,key.eq.faixa_salarial,' +
-          'key.ilike.%renda%,' +
-          'key.ilike.%salario%,' +
-          'key.ilike.%remuneracao%,' +
-          'label.ilike.%faixa salarial%,label.ilike.%salary%,label.ilike.%renda%,label.ilike.%salario%,label.ilike.%remuneracao%',
-      );
-
-    if (questionsError) throw questionsError;
-    const questionIds = (questions ?? []).map((question) => question.id);
-    if (questionIds.length === 0) return [];
-    return questionIds;
-  }
-
-  private needsSalaryFilter(params: LeadsListingSearchDto): boolean {
-    return this.buildSalaryTextPatterns(params).length > 0;
-  }
-
-  private buildSalaryTextPatterns(params: LeadsListingSearchDto): string[] {
-    return [params.salaryRange, params.salaryMin, params.salaryMax]
-      .map((value) => this.normalizeSalaryFilterInput(value))
-      .filter((value): value is string => !!value)
-      .map((value) => `%${this.escapeLikePattern(value)}%`);
-  }
-
-  private normalizeSalaryFilterInput(value?: string): string | null {
-    if (!value) return null;
-    return value
-      .trim()
-      .replace(/\s+/g, ' ')
-      .replace(/\s?R\$\s?/gi, 'R$')
-      .replace(/,+/g, ',');
+    const secondSet = new Set(second);
+    return first.filter((id) => secondSet.has(id));
   }
 
   private isUuid(value: string): boolean {
