@@ -1,0 +1,277 @@
+import { Inject, Injectable, InternalServerErrorException } from '@nestjs/common';
+import type { SupabaseClient } from '@supabase/supabase-js';
+
+import { SUPABASE } from '@/infra/supabase/supabase.provider';
+import type {
+  FormAnswerBatchItem,
+  JobRunSnapshot,
+  JobRunStatus,
+  LeadSearchProfileUpsertPayload,
+  NormalizeLeadSearchProfilePort,
+} from '@/modules/leads/application/ports/normalize-lead-search-profile.port';
+
+interface JobRunRow {
+  id: string;
+  job_name: string;
+  status: JobRunStatus;
+  cursor_created_at: string | null;
+  cursor_id: string | null;
+  processed_rows: number;
+  processed_leads: number;
+  meta: Record<string, unknown> | null;
+}
+
+@Injectable()
+export class SupabaseNormalizeLeadSearchProfileRepository
+  implements NormalizeLeadSearchProfilePort
+{
+  constructor(@Inject(SUPABASE) private readonly supabase: SupabaseClient) {}
+
+  async resolveQuestionIdsByNormalizedKeys(keys: string[]): Promise<Record<string, string[]>> {
+    if (keys.length === 0) return {};
+
+    const { data, error } = await this.supabase
+      .from('form_questions')
+      .select('id,key_normalized')
+      .in('key_normalized', keys);
+
+    if (error) {
+      throw new InternalServerErrorException(
+        `Erro ao resolver question_ids por key_normalized: ${error.message}`,
+      );
+    }
+
+    const output: Record<string, string[]> = {};
+    for (const key of keys) output[key] = [];
+
+    for (const row of data ?? []) {
+      const normalized = String(row.key_normalized);
+      output[normalized] = [...(output[normalized] ?? []), String(row.id)];
+    }
+
+    return output;
+  }
+
+  async readFormAnswersBatch(params: {
+    questionIds: string[];
+    cursor: { createdAt: string; id: string } | null;
+    limit: number;
+  }): Promise<FormAnswerBatchItem[]> {
+    if (params.questionIds.length === 0) return [];
+
+    let query = this.supabase
+      .from('form_answers')
+      .select(
+        'id,question_id,created_at,value_text,value_number,form_submission:form_submissions!inner(lead_id)',
+      )
+      .in('question_id', params.questionIds)
+      .order('created_at', { ascending: true })
+      .order('id', { ascending: true })
+      .limit(params.limit);
+
+    if (params.cursor) {
+      query = query.or(
+        `created_at.gt.${params.cursor.createdAt},and(created_at.eq.${params.cursor.createdAt},id.gt.${params.cursor.id})`,
+      );
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      throw new InternalServerErrorException(`Erro ao ler form_answers em lote: ${error.message}`);
+    }
+
+    return (data ?? []).map((row) => ({
+      id: String(row.id),
+      questionId: String(row.question_id),
+      createdAt: String(row.created_at),
+      valueText: (row as { value_text?: string | null }).value_text ?? null,
+      valueNumber: (row as { value_number?: number | null }).value_number ?? null,
+      leadId: ((row as { form_submission?: { lead_id?: string | null } }).form_submission
+        ?.lead_id ?? null) as string | null,
+    }));
+  }
+
+  async upsertLeadSearchProfile(batch: LeadSearchProfileUpsertPayload[]): Promise<void> {
+    if (batch.length === 0) return;
+
+    const payload = batch.map((row) => ({
+      lead_id: row.leadId,
+      salary_min: row.salaryMin ?? null,
+      salary_max: row.salaryMax ?? null,
+      age_min: row.ageMin ?? null,
+      age_max: row.ageMax ?? null,
+      gender: row.gender ?? null,
+      company_size: row.companySize ?? null,
+      education_level: row.educationLevel ?? null,
+    }));
+
+    const { error } = await this.supabase
+      .from('lead_search_profile')
+      .upsert(payload, { onConflict: 'lead_id' });
+
+    if (error) {
+      throw new InternalServerErrorException(
+        `Erro ao upsert em lead_search_profile: ${error.message}`,
+      );
+    }
+  }
+
+  async findLatestJobRunByStatuses(params: {
+    jobName: string;
+    statuses: JobRunStatus[];
+  }): Promise<JobRunSnapshot | null> {
+    if (params.statuses.length === 0) return null;
+
+    const { data, error } = await this.supabase
+      .from('job_runs')
+      .select(
+        'id,job_name,status,cursor_created_at,cursor_id,processed_rows,processed_leads,meta,started_at',
+      )
+      .eq('job_name', params.jobName)
+      .in('status', params.statuses)
+      .order('started_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      throw new InternalServerErrorException(
+        `Erro ao buscar job_run de retomada: ${error.message}`,
+      );
+    }
+
+    if (!data) return null;
+    return this.toJobRunSnapshot(data as JobRunRow);
+  }
+
+  async createJobRun(params: {
+    jobName: string;
+    status: JobRunStatus;
+    cursor: { createdAt: string; id: string } | null;
+    processedRows: number;
+    processedLeads: number;
+    meta: Record<string, unknown>;
+  }): Promise<JobRunSnapshot> {
+    const payload = {
+      job_name: params.jobName,
+      status: params.status,
+      cursor_created_at: params.cursor?.createdAt ?? null,
+      cursor_id: params.cursor?.id ?? null,
+      processed_rows: params.processedRows,
+      processed_leads: params.processedLeads,
+      meta: params.meta,
+    };
+
+    const { data, error } = await this.supabase
+      .from('job_runs')
+      .insert(payload)
+      .select('id,job_name,status,cursor_created_at,cursor_id,processed_rows,processed_leads,meta')
+      .single();
+
+    if (error) {
+      throw new InternalServerErrorException(`Erro ao criar job_run: ${error.message}`);
+    }
+
+    return this.toJobRunSnapshot(data as JobRunRow);
+  }
+
+  async updateJobRunProgress(params: {
+    id: string;
+    cursor: { createdAt: string; id: string } | null;
+    processedRows: number;
+    processedLeads: number;
+    meta?: Record<string, unknown>;
+  }): Promise<void> {
+    const { error } = await this.supabase
+      .from('job_runs')
+      .update({
+        status: 'running',
+        cursor_created_at: params.cursor?.createdAt ?? null,
+        cursor_id: params.cursor?.id ?? null,
+        processed_rows: params.processedRows,
+        processed_leads: params.processedLeads,
+        ...(params.meta ? { meta: params.meta } : {}),
+      })
+      .eq('id', params.id);
+
+    if (error) {
+      throw new InternalServerErrorException(
+        `Erro ao atualizar progresso do job_run: ${error.message}`,
+      );
+    }
+  }
+
+  async markJobRunFailed(params: {
+    id: string;
+    cursor: { createdAt: string; id: string } | null;
+    processedRows: number;
+    processedLeads: number;
+    errorMessage: string;
+    meta?: Record<string, unknown>;
+  }): Promise<void> {
+    const { error } = await this.supabase
+      .from('job_runs')
+      .update({
+        status: 'failed',
+        finished_at: new Date().toISOString(),
+        cursor_created_at: params.cursor?.createdAt ?? null,
+        cursor_id: params.cursor?.id ?? null,
+        processed_rows: params.processedRows,
+        processed_leads: params.processedLeads,
+        error_message: params.errorMessage,
+        ...(params.meta ? { meta: params.meta } : {}),
+      })
+      .eq('id', params.id);
+
+    if (error) {
+      throw new InternalServerErrorException(
+        `Erro ao marcar job_run como failed: ${error.message}`,
+      );
+    }
+  }
+
+  async markJobRunCompleted(params: {
+    id: string;
+    cursor: { createdAt: string; id: string } | null;
+    processedRows: number;
+    processedLeads: number;
+    meta?: Record<string, unknown>;
+  }): Promise<void> {
+    const { error } = await this.supabase
+      .from('job_runs')
+      .update({
+        status: 'completed',
+        finished_at: new Date().toISOString(),
+        cursor_created_at: params.cursor?.createdAt ?? null,
+        cursor_id: params.cursor?.id ?? null,
+        processed_rows: params.processedRows,
+        processed_leads: params.processedLeads,
+        ...(params.meta ? { meta: params.meta } : {}),
+      })
+      .eq('id', params.id);
+
+    if (error) {
+      throw new InternalServerErrorException(
+        `Erro ao marcar job_run como completed: ${error.message}`,
+      );
+    }
+  }
+
+  private toJobRunSnapshot(row: JobRunRow): JobRunSnapshot {
+    return {
+      id: row.id,
+      jobName: row.job_name,
+      status: row.status,
+      cursor:
+        row.cursor_created_at && row.cursor_id
+          ? {
+              createdAt: row.cursor_created_at,
+              id: row.cursor_id,
+            }
+          : null,
+      processedRows: row.processed_rows,
+      processedLeads: row.processed_leads,
+      meta: row.meta ?? {},
+    };
+  }
+}
