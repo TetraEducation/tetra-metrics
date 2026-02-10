@@ -8,7 +8,11 @@ import type {
   LeadsListingResult,
   LeadsListingSearchDto,
 } from '@/modules/leads/application/dto/leads-listing.dto';
-import type { LeadsRepositoryPort } from '@/modules/leads/application/ports/leads-repository.port';
+import type {
+  AttachIdentifierInput,
+  AttachIdentifiersResult,
+  LeadsRepositoryPort,
+} from '@/modules/leads/application/ports/leads-repository.port';
 import type { Lead, LeadIdentifier } from '@/modules/leads/domain/lead';
 
 type LeadRow = {
@@ -53,9 +57,10 @@ export class SupabaseLeadsRepository implements LeadsRepositoryPort {
   }
 
   async createLead(payload: { name?: string | null }): Promise<Lead> {
+    const name = normalizeText(payload.name) ?? '';
     const { data, error } = await this.supabase
       .from('leads')
-      .insert({ full_name: payload.name ?? null })
+      .insert({ full_name: name })
       .select('id, full_name, created_at')
       .single();
 
@@ -63,26 +68,49 @@ export class SupabaseLeadsRepository implements LeadsRepositoryPort {
     return this.mapLead(data);
   }
 
-  async attachIdentifiers(
-    leadId: string,
-    identifiers: Array<{ type: 'email' | 'phone'; valueNorm: string }>,
-  ): Promise<void> {
-    if (identifiers.length === 0) return;
+  async attachIdentifiers(leadId: string, identifiers: AttachIdentifierInput[]): Promise<AttachIdentifiersResult> {
+    const conflicts: AttachIdentifiersResult['conflicts'] = [];
 
-    const payload = identifiers.map((identifier) => ({
-      lead_id: leadId,
-      type: identifier.type,
-      value_normalized: identifier.valueNorm,
-    }));
+    for (const identifier of identifiers) {
+      const payload = {
+        lead_id: leadId,
+        type: identifier.type,
+        value: identifier.value,
+        value_normalized: identifier.valueNorm,
+        is_primary: identifier.isPrimary ?? false,
+      };
 
-    const { error } = await this.supabase.from('lead_identifiers').insert(payload);
-    if (error) throw error;
+      const { error } = await this.supabase.from('lead_identifiers').insert(payload);
+
+      if (!error) continue;
+
+      if (!this.isUniqueViolation(error)) {
+        throw error;
+      }
+
+      conflicts.push({ type: identifier.type, valueNorm: identifier.valueNorm });
+
+      if (identifier.onConflict === 'set_primary') {
+        const { error: updateError } = await this.supabase
+          .from('lead_identifiers')
+          .update({
+            is_primary: identifier.isPrimary ?? true,
+            value: identifier.value,
+          })
+          .eq('type', identifier.type)
+          .eq('value_normalized', identifier.valueNorm);
+
+        if (updateError) throw updateError;
+      }
+    }
+
+    return { conflicts };
   }
 
-  async updateLead(id: string, payload: { name?: string | null }): Promise<void> {
+  async updateLead(id: string, payload: { name: string }): Promise<void> {
     const { error } = await this.supabase
       .from('leads')
-      .update({ full_name: payload.name ?? null })
+      .update({ full_name: payload.name })
       .eq('id', id);
     if (error) throw error;
   }
@@ -657,6 +685,15 @@ export class SupabaseLeadsRepository implements LeadsRepositoryPort {
       type: row.type as LeadIdentifier['type'],
       valueNorm: row.value_normalized,
     };
+  }
+
+  private isUniqueViolation(error: unknown): boolean {
+    const e = error as { code?: string; message?: string; details?: string; hint?: string };
+    return (
+      e?.code === '23505' ||
+      e?.message?.toLowerCase().includes('duplicate key') === true ||
+      e?.details?.toLowerCase().includes('already exists') === true
+    );
   }
 
   private async resolveLeadIdsByFilters(params: LeadsListingSearchDto): Promise<string[] | null> {

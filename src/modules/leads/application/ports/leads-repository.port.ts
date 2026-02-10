@@ -7,14 +7,25 @@ import type {
 
 export const LEADS_REPOSITORY = Symbol('LEADS_REPOSITORY');
 
+export type LeadIdentifierOnConflict = 'ignore' | 'set_primary';
+
+export type AttachIdentifierInput = {
+  type: LeadIdentifierType;
+  value: string;
+  valueNorm: string;
+  isPrimary?: boolean;
+  onConflict?: LeadIdentifierOnConflict;
+};
+
+export type AttachIdentifiersResult = {
+  conflicts: Array<{ type: LeadIdentifierType; valueNorm: string }>;
+};
+
 export interface LeadsRepositoryPort {
   findIdentifiersByValues(values: string[]): Promise<LeadIdentifier[]>;
   createLead(payload: { name?: string | null }): Promise<Lead>;
-  attachIdentifiers(
-    leadId: string,
-    identifiers: Array<{ type: LeadIdentifierType; valueNorm: string }>,
-  ): Promise<void>;
-  updateLead(id: string, payload: { name?: string | null }): Promise<void>;
+  attachIdentifiers(leadId: string, identifiers: AttachIdentifierInput[]): Promise<AttachIdentifiersResult>;
+  updateLead(id: string, payload: { name: string }): Promise<void>;
   reassignIdentifiers(targetLeadId: string, sourceLeadIds: string[]): Promise<void>;
   deleteLeads(ids: string[]): Promise<void>;
   getLeadById(id: string): Promise<Lead>;
