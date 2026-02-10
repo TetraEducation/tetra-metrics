@@ -30,6 +30,9 @@ export class LeadsController {
       email: body.email ?? null,
       phone: body.phone ?? null,
       source: body.source ?? null,
+      sourceSystem: body.sourceSystem ?? null,
+      sourceRef: body.sourceRef ?? null,
+      meta: body.meta ?? null,
     });
 
     return {

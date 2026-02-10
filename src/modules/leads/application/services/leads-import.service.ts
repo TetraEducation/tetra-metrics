@@ -27,10 +27,17 @@ export class LeadsImportService {
     const name = normalizeText(input.name);
     const emailNorm = normalizeEmail(input.email);
     const phoneNorm = this.normalizePhone(input.phone);
-    const sourceSystemNorm = this.normalizeSourceSystemFromSource(input.source);
+    const hasExplicitSourceSystem = typeof input.sourceSystem === 'string' && input.sourceSystem.trim().length > 0;
+    const sourceSystemNorm = this.normalizeSourceSystem(
+      hasExplicitSourceSystem ? input.sourceSystem : input.source,
+    );
+    const sourceRefNorm = this.normalizeSourceRef(input.sourceRef);
 
     if (!emailNorm && !phoneNorm) {
       throw new BadRequestException('Informe ao menos email ou telefone.');
+    }
+    if (hasExplicitSourceSystem && !sourceRefNorm) {
+      throw new BadRequestException('Informe sourceRef quando sourceSystem existir.');
     }
 
     const emailRaw = typeof input.email === 'string' ? input.email.trim() : null;
@@ -90,8 +97,8 @@ export class LeadsImportService {
       await this.repository.upsertLeadSource({
         leadId,
         sourceSystem: sourceSystemNorm,
-        sourceRef: `lead:${leadId}`,
-        meta: {},
+        sourceRef: sourceRefNorm ?? `lead:${leadId}`,
+        meta: input.meta ?? {},
       });
     }
 
@@ -122,9 +129,15 @@ export class LeadsImportService {
     return digits.length ? digits : null;
   }
 
-  private normalizeSourceSystemFromSource(source?: string | null): string | null {
+  private normalizeSourceSystem(source?: string | null): string | null {
     if (typeof source !== 'string') return null;
     const s = source.trim().toLowerCase();
+    return s.length ? s : null;
+  }
+
+  private normalizeSourceRef(sourceRef?: string | null): string | null {
+    if (typeof sourceRef !== 'string') return null;
+    const s = sourceRef.trim();
     return s.length ? s : null;
   }
 }

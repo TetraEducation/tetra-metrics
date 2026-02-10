@@ -5,4 +5,7 @@ export interface ImportLeadInput {
   phone?: string | null;
   name?: string | null;
   source?: LEADS_SOURCE | string | null;
+  sourceSystem?: string | null;
+  sourceRef?: string | null;
+  meta?: unknown;
 }

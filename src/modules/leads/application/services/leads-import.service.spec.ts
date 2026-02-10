@@ -40,6 +40,22 @@ describe('LeadsImportService', () => {
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
+  it('rejeita quando tem sourceSystem mas sourceRef é vazio', async () => {
+    const repo = createRepoMock();
+    const svc = new LeadsImportService(repo);
+
+    await expect(
+      svc.findOrCreateLeadByIdentifiers({
+        email: 'lucas@exemplo.com',
+        phone: null,
+        name: null,
+        sourceSystem: 'great_pages',
+        sourceRef: '   ',
+        meta: { utm_source: 'x' },
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
   it('cria lead novo quando não encontra por email/phone e anexa identificadores', async () => {
     const repo = createRepoMock({
       createLead: jest.fn().mockResolvedValue({
@@ -167,6 +183,44 @@ describe('LeadsImportService', () => {
       sourceSystem: 'great_pages',
       sourceRef: 'lead:lead-email',
       meta: {},
+    });
+  });
+
+  it('registra source em lead_sources quando sourceSystem/sourceRef/meta são fornecidos', async () => {
+    const repo = createRepoMock({
+      findLeadBySearch: jest.fn().mockImplementation(async (p: { email?: string; phone?: string }) => {
+        if (p.email) return 'lead-email';
+        return null;
+      }),
+      getLeadById: jest.fn().mockResolvedValue({
+        id: 'lead-email',
+        name: 'Any',
+        createdAt: '2025-01-01T00:00:00.000Z',
+      }),
+    });
+
+    const svc = new LeadsImportService(repo);
+    await svc.findOrCreateLeadByIdentifiers({
+      name: 'Lucas',
+      email: 'lucas@exemplo.com',
+      phone: null,
+      source: 'GREAT_PAGES',
+      sourceSystem: 'great_pages',
+      sourceRef: 'gp:abc-123',
+      meta: {
+        url: 'https://example.com',
+        utm: { utm_source: 'google' },
+      },
+    });
+
+    expect(repo.upsertLeadSource).toHaveBeenCalledWith({
+      leadId: 'lead-email',
+      sourceSystem: 'great_pages',
+      sourceRef: 'gp:abc-123',
+      meta: {
+        url: 'https://example.com',
+        utm: { utm_source: 'google' },
+      },
     });
   });
 });
