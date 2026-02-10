@@ -115,6 +115,30 @@ export class SupabaseLeadsRepository implements LeadsRepositoryPort {
     if (error) throw error;
   }
 
+  async upsertLeadSource(params: {
+    leadId: string;
+    sourceSystem: string;
+    sourceRef: string;
+    meta?: unknown;
+  }): Promise<void> {
+    const nowIso = new Date().toISOString();
+    const payload = [
+      {
+        lead_id: params.leadId,
+        source_system: params.sourceSystem,
+        source_ref: params.sourceRef,
+        last_seen_at: nowIso,
+        meta: params.meta ?? {},
+      },
+    ];
+
+    const { error } = await this.supabase
+      .from('lead_sources')
+      .upsert(payload, { onConflict: 'source_system,source_ref' });
+
+    if (error) throw error;
+  }
+
   async reassignIdentifiers(targetLeadId: string, sourceLeadIds: string[]): Promise<void> {
     if (sourceLeadIds.length === 0) return;
 

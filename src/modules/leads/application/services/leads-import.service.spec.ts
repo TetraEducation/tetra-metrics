@@ -13,6 +13,7 @@ function createRepoMock(overrides?: Partial<LeadsRepositoryPort>): LeadsReposito
     }),
     attachIdentifiers: jest.fn().mockResolvedValue({ conflicts: [] }),
     updateLead: jest.fn().mockResolvedValue(undefined),
+    upsertLeadSource: jest.fn().mockResolvedValue(undefined),
     reassignIdentifiers: jest.fn().mockResolvedValue(undefined),
     deleteLeads: jest.fn().mockResolvedValue(undefined),
     getLeadById: jest.fn().mockResolvedValue({
@@ -134,10 +135,39 @@ describe('LeadsImportService', () => {
     const result = await svc.findOrCreateLeadByIdentifiers({
       name: null,
       email: 'lucas@exemplo.com',
-      phone: '+55 (11) 99999-8888',
+      phone: '(11) 99999-8888',
     });
 
     expect(result.phoneIgnoredDueToConflict).toBe(true);
+  });
+
+  it('registra source em lead_sources quando source é fornecido', async () => {
+    const repo = createRepoMock({
+      findLeadBySearch: jest.fn().mockImplementation(async (p: { email?: string; phone?: string }) => {
+        if (p.email) return 'lead-email';
+        return null;
+      }),
+      getLeadById: jest.fn().mockResolvedValue({
+        id: 'lead-email',
+        name: 'Any',
+        createdAt: '2025-01-01T00:00:00.000Z',
+      }),
+    });
+
+    const svc = new LeadsImportService(repo);
+    await svc.findOrCreateLeadByIdentifiers({
+      name: 'Lucas',
+      email: 'lucas@exemplo.com',
+      phone: null,
+      source: 'Great_Pages',
+    });
+
+    expect(repo.upsertLeadSource).toHaveBeenCalledWith({
+      leadId: 'lead-email',
+      sourceSystem: 'great_pages',
+      sourceRef: 'lead:lead-email',
+      meta: {},
+    });
   });
 });
 

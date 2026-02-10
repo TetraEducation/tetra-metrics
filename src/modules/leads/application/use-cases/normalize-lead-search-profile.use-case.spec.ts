@@ -74,6 +74,7 @@ describe('NormalizeLeadSearchProfileUseCase', () => {
       processedRows: 0,
       processedLeads: 0,
       cursor: null,
+      completionReason: null,
       skipped: true,
     });
     expect(port.createJobRun).not.toHaveBeenCalled();

@@ -26,6 +26,12 @@ export interface LeadsRepositoryPort {
   createLead(payload: { name?: string | null }): Promise<Lead>;
   attachIdentifiers(leadId: string, identifiers: AttachIdentifierInput[]): Promise<AttachIdentifiersResult>;
   updateLead(id: string, payload: { name: string }): Promise<void>;
+  upsertLeadSource(params: {
+    leadId: string;
+    sourceSystem: string;
+    sourceRef: string;
+    meta?: unknown;
+  }): Promise<void>;
   reassignIdentifiers(targetLeadId: string, sourceLeadIds: string[]): Promise<void>;
   deleteLeads(ids: string[]): Promise<void>;
   getLeadById(id: string): Promise<Lead>;

@@ -27,6 +27,7 @@ export class LeadsImportService {
     const name = normalizeText(input.name);
     const emailNorm = normalizeEmail(input.email);
     const phoneNorm = this.normalizePhone(input.phone);
+    const sourceSystemNorm = this.normalizeSourceSystemFromSource(input.source);
 
     if (!emailNorm && !phoneNorm) {
       throw new BadRequestException('Informe ao menos email ou telefone.');
@@ -84,6 +85,16 @@ export class LeadsImportService {
       await this.repository.updateLead(leadId, { name });
     }
 
+    // 3.1) Registra/atualiza origem do lead (lead_sources) quando fornecida.
+    if (sourceSystemNorm) {
+      await this.repository.upsertLeadSource({
+        leadId,
+        sourceSystem: sourceSystemNorm,
+        sourceRef: `lead:${leadId}`,
+        meta: {},
+      });
+    }
+
     // 4) Anexa telefone como best-effort (se conflitar com outro lead, ignora).
     if (phoneNorm) {
       const { conflicts } = await this.repository.attachIdentifiers(leadId, [
@@ -109,5 +120,11 @@ export class LeadsImportService {
     if (typeof phone !== 'string') return null;
     const digits = phone.replace(/\D+/g, '');
     return digits.length ? digits : null;
+  }
+
+  private normalizeSourceSystemFromSource(source?: string | null): string | null {
+    if (typeof source !== 'string') return null;
+    const s = source.trim().toLowerCase();
+    return s.length ? s : null;
   }
 }
