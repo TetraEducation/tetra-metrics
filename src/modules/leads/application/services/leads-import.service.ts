@@ -111,6 +111,28 @@ export class LeadsImportService {
     // 3.2) Registra evento de captura de UTM campaign (quando presente).
     if (utmCampaignTrimmed && sourceSystemNorm && sourceRefNorm && utmCampaignNorm) {
       const nowIso = new Date().toISOString();
+
+      // 3.2.1) Garante tag canônica e vincula ao lead.
+      const tagId = await this.repository.upsertTag({
+        key: utmCampaignTrimmed,
+        name: utmCampaignTrimmed,
+        category: 'campaign',
+        weight: 1,
+      });
+      await this.repository.upsertTagAlias({
+        tagId,
+        sourceSystem: sourceSystemNorm,
+        sourceKey: utmCampaignNorm,
+      });
+      await this.repository.upsertLeadTag({
+        leadId,
+        tagId,
+        sourceSystem: sourceSystemNorm,
+        sourceRef: sourceRefNorm,
+        lastSeenAt: nowIso,
+        meta: { from: 'import-one.utm_campaign' },
+      });
+
       await this.repository.createLeadEvent({
         leadId,
         eventType: 'utm_campaign.captured',

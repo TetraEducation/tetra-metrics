@@ -33,5 +33,10 @@ export class ImportOneLeadDto {
   @IsOptional()
   @IsString()
   utm_campaing?: string;
+
+  // Campo correto (mantemos o legado `utm_campaing` por compatibilidade).
+  @IsOptional()
+  @IsString()
+  utm_campaign?: string;
 }
 

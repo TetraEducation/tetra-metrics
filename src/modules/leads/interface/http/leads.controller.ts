@@ -34,7 +34,7 @@ export class LeadsController {
       sourceSystem: body.sourceSystem ?? null,
       sourceRef: body.sourceRef ?? null,
       meta: body.meta ?? null,
-      utmCampaign: body.utm_campaing ?? null,
+      utmCampaign: body.utm_campaign ?? body.utm_campaing ?? null,
     } as ImportLeadInput;
 
     const result = await this.leadsImport.findOrCreateLeadByIdentifiers(input);

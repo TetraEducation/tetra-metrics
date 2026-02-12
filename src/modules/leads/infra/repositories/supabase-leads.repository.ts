@@ -139,6 +139,71 @@ export class SupabaseLeadsRepository implements LeadsRepositoryPort {
     if (error) throw error;
   }
 
+  async upsertTag(params: {
+    key: string;
+    name: string;
+    category?: string | null;
+    weight?: number;
+  }): Promise<string> {
+    const { data, error } = await this.supabase
+      .from('tags')
+      .upsert(
+        {
+          key: params.key,
+          name: params.name,
+          category: params.category ?? null,
+          weight: params.weight ?? 1,
+        },
+        { onConflict: 'key_normalized' },
+      )
+      .select('id')
+      .single();
+
+    if (error || !data?.id) throw error ?? new Error('Failed to upsert tag');
+    return data.id;
+  }
+
+  async upsertTagAlias(params: { tagId: string; sourceSystem: string; sourceKey: string }): Promise<void> {
+    const { error } = await this.supabase
+      .from('tag_aliases')
+      .upsert(
+        {
+          tag_id: params.tagId,
+          source_system: params.sourceSystem,
+          source_key: params.sourceKey,
+        },
+        { onConflict: 'source_system,source_key' },
+      );
+
+    if (error) throw error;
+  }
+
+  async upsertLeadTag(params: {
+    leadId: string;
+    tagId: string;
+    sourceSystem: string;
+    sourceRef?: string | null;
+    meta?: unknown;
+    lastSeenAt?: string;
+  }): Promise<void> {
+    const nowIso = params.lastSeenAt ?? new Date().toISOString();
+    const { error } = await this.supabase
+      .from('lead_tags')
+      .upsert(
+        {
+          lead_id: params.leadId,
+          tag_id: params.tagId,
+          source_system: params.sourceSystem,
+          source_ref: params.sourceRef ?? null,
+          last_seen_at: nowIso,
+          meta: params.meta ?? {},
+        },
+        { onConflict: 'lead_id,tag_id,source_system' },
+      );
+
+    if (error) throw error;
+  }
+
   async createLeadEvent(params: {
     leadId: string;
     eventType: string;

@@ -32,6 +32,21 @@ export interface LeadsRepositoryPort {
     sourceRef: string;
     meta?: unknown;
   }): Promise<void>;
+  upsertTag(params: {
+    key: string;
+    name: string;
+    category?: string | null;
+    weight?: number;
+  }): Promise<string>;
+  upsertTagAlias(params: { tagId: string; sourceSystem: string; sourceKey: string }): Promise<void>;
+  upsertLeadTag(params: {
+    leadId: string;
+    tagId: string;
+    sourceSystem: string;
+    sourceRef?: string | null;
+    meta?: unknown;
+    lastSeenAt?: string;
+  }): Promise<void>;
   createLeadEvent(params: {
     leadId: string;
     eventType: string;

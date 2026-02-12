@@ -14,6 +14,9 @@ function createRepoMock(overrides?: Partial<LeadsRepositoryPort>): LeadsReposito
     attachIdentifiers: jest.fn().mockResolvedValue({ conflicts: [] }),
     updateLead: jest.fn().mockResolvedValue(undefined),
     upsertLeadSource: jest.fn().mockResolvedValue(undefined),
+    upsertTag: jest.fn().mockResolvedValue('tag-1'),
+    upsertTagAlias: jest.fn().mockResolvedValue(undefined),
+    upsertLeadTag: jest.fn().mockResolvedValue(undefined),
     createLeadEvent: jest.fn().mockResolvedValue(undefined),
     reassignIdentifiers: jest.fn().mockResolvedValue(undefined),
     deleteLeads: jest.fn().mockResolvedValue(undefined),
@@ -97,6 +100,28 @@ describe('LeadsImportService', () => {
       sourceRef: 'landing:123',
       utmCampaign: ' CPB ',
     });
+
+    expect(repo.upsertTag).toHaveBeenCalledWith({
+      key: 'CPB',
+      name: 'CPB',
+      category: 'campaign',
+      weight: 1,
+    });
+    expect(repo.upsertTagAlias).toHaveBeenCalledWith({
+      tagId: 'tag-1',
+      sourceSystem: 'great_pages',
+      sourceKey: 'cpb',
+    });
+    expect(repo.upsertLeadTag).toHaveBeenCalledWith(
+      expect.objectContaining({
+        leadId: 'new-lead',
+        tagId: 'tag-1',
+        sourceSystem: 'great_pages',
+        sourceRef: 'landing:123',
+        meta: { from: 'import-one.utm_campaign' },
+        lastSeenAt: expect.any(String),
+      }),
+    );
 
     expect(repo.createLeadEvent).toHaveBeenCalledWith(
       expect.objectContaining({
