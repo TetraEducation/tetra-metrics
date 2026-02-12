@@ -631,9 +631,17 @@ export class ColumnInferenceService implements ColumnInferencePort {
       const normalized = normalizedHeaders[i];
       const original = originalHeaders[i];
 
-      const hasExclusion = this.phoneExclusionPatterns.some((pattern) =>
-        normalized.includes(pattern),
-      );
+      const hasStrongPhoneSignal =
+        normalized.includes('whatsapp') ||
+        normalized.includes('telefone') ||
+        normalized.includes('celular') ||
+        normalized.includes('phone') ||
+        normalized.includes('mobile') ||
+        normalized.includes('tel');
+
+      const hasExclusion =
+        !hasStrongPhoneSignal &&
+        this.phoneExclusionPatterns.some((pattern) => normalized.includes(pattern));
       if (hasExclusion) {
         continue;
       }
