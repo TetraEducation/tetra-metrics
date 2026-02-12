@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Post, Query, UsePipes, ValidationPipe } from '@nestjs/common';
 
+import type { ImportLeadInput } from '@/modules/leads/application/dto/import-lead.input';
 import type { SearchLeadDto } from '@/modules/leads/application/dto/search-lead.dto';
 // biome-ignore lint/style/useImportType: NestJS DI precisa da referência em tempo de execução
 import { LeadsImportService } from '@/modules/leads/application/services/leads-import.service';
@@ -25,7 +26,7 @@ export class LeadsController {
     }),
   )
   async importOne(@Body() body: ImportOneLeadDto) {
-    const result = await this.leadsImport.findOrCreateLeadByIdentifiers({
+    const input = {
       name: body.name ?? null,
       email: body.email ?? null,
       phone: body.phone ?? null,
@@ -33,7 +34,10 @@ export class LeadsController {
       sourceSystem: body.sourceSystem ?? null,
       sourceRef: body.sourceRef ?? null,
       meta: body.meta ?? null,
-    });
+      utmCampaign: body.utm_campaing ?? null,
+    } as ImportLeadInput;
+
+    const result = await this.leadsImport.findOrCreateLeadByIdentifiers(input);
 
     return {
       ok: true,

@@ -29,5 +29,9 @@ export class ImportOneLeadDto {
   @IsOptional()
   @IsObject()
   meta?: Record<string, unknown>;
+
+  @IsOptional()
+  @IsString()
+  utm_campaing?: string;
 }
 

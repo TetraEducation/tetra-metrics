@@ -139,6 +139,32 @@ export class SupabaseLeadsRepository implements LeadsRepositoryPort {
     if (error) throw error;
   }
 
+  async createLeadEvent(params: {
+    leadId: string;
+    eventType: string;
+    sourceSystem: string;
+    occurredAt: string;
+    ingestedAt: string;
+    dedupeKey: string;
+    payload?: unknown;
+  }): Promise<void> {
+    const payload = {
+      lead_id: params.leadId,
+      event_type: params.eventType,
+      source_system: params.sourceSystem,
+      occurred_at: params.occurredAt,
+      ingested_at: params.ingestedAt,
+      dedupe_key: params.dedupeKey,
+      payload: params.payload ?? {},
+    };
+
+    const { error } = await this.supabase.from('lead_events').insert(payload);
+
+    if (!error) return;
+    if (this.isUniqueViolation(error)) return;
+    throw error;
+  }
+
   async reassignIdentifiers(targetLeadId: string, sourceLeadIds: string[]): Promise<void> {
     if (sourceLeadIds.length === 0) return;
 

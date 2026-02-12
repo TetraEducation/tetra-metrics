@@ -32,6 +32,15 @@ export interface LeadsRepositoryPort {
     sourceRef: string;
     meta?: unknown;
   }): Promise<void>;
+  createLeadEvent(params: {
+    leadId: string;
+    eventType: string;
+    sourceSystem: string;
+    occurredAt: string;
+    ingestedAt: string;
+    dedupeKey: string;
+    payload?: unknown;
+  }): Promise<void>;
   reassignIdentifiers(targetLeadId: string, sourceLeadIds: string[]): Promise<void>;
   deleteLeads(ids: string[]): Promise<void>;
   getLeadById(id: string): Promise<Lead>;

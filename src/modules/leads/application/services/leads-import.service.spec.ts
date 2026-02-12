@@ -14,6 +14,7 @@ function createRepoMock(overrides?: Partial<LeadsRepositoryPort>): LeadsReposito
     attachIdentifiers: jest.fn().mockResolvedValue({ conflicts: [] }),
     updateLead: jest.fn().mockResolvedValue(undefined),
     upsertLeadSource: jest.fn().mockResolvedValue(undefined),
+    createLeadEvent: jest.fn().mockResolvedValue(undefined),
     reassignIdentifiers: jest.fn().mockResolvedValue(undefined),
     deleteLeads: jest.fn().mockResolvedValue(undefined),
     getLeadById: jest.fn().mockResolvedValue({
@@ -54,6 +55,61 @@ describe('LeadsImportService', () => {
         meta: { utm_source: 'x' },
       }),
     ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('rejeita quando utmCampaign existe mas sourceSystem não foi informado', async () => {
+    const repo = createRepoMock();
+    const svc = new LeadsImportService(repo);
+
+    await expect(
+      svc.findOrCreateLeadByIdentifiers({
+        email: 'lucas@exemplo.com',
+        phone: null,
+        name: null,
+        sourceSystem: null,
+        sourceRef: null,
+        utmCampaign: 'CPB',
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('cria evento utm_campaign.captured quando utmCampaign vem com sourceSystem/sourceRef', async () => {
+    const repo = createRepoMock({
+      findLeadBySearch: jest.fn().mockResolvedValue(null),
+      createLead: jest.fn().mockResolvedValue({
+        id: 'new-lead',
+        name: '',
+        createdAt: '2025-01-01T00:00:00.000Z',
+      }),
+      getLeadById: jest.fn().mockResolvedValue({
+        id: 'new-lead',
+        name: 'Lucas',
+        createdAt: '2025-01-01T00:00:00.000Z',
+      }),
+    });
+
+    const svc = new LeadsImportService(repo);
+    await svc.findOrCreateLeadByIdentifiers({
+      name: 'Lucas',
+      email: 'lucas@exemplo.com',
+      phone: null,
+      sourceSystem: 'great_pages',
+      sourceRef: 'landing:123',
+      utmCampaign: ' CPB ',
+    });
+
+    expect(repo.createLeadEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        leadId: 'new-lead',
+        eventType: 'utm_campaign.captured',
+        sourceSystem: 'great_pages',
+        dedupeKey: expect.stringContaining('great_pages:import-one:landing:123:new-lead:utm_campaign:cpb'),
+        payload: expect.objectContaining({
+          utm_campaign: 'CPB',
+          source_ref: 'landing:123',
+        }),
+      }),
+    );
   });
 
   it('cria lead novo quando não encontra por email/phone e anexa identificadores', async () => {

@@ -8,4 +8,5 @@ export interface ImportLeadInput {
   sourceSystem?: string | null;
   sourceRef?: string | null;
   meta?: unknown;
+  utmCampaign?: string | null;
 }

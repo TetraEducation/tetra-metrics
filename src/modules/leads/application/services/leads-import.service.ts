@@ -32,12 +32,18 @@ export class LeadsImportService {
       hasExplicitSourceSystem ? input.sourceSystem : input.source,
     );
     const sourceRefNorm = this.normalizeSourceRef(input.sourceRef);
+    const utmCampaignTrimmed =
+      typeof input.utmCampaign === 'string' ? input.utmCampaign.trim() : null;
+    const utmCampaignNorm = utmCampaignTrimmed ? utmCampaignTrimmed.toLowerCase() : null;
 
     if (!emailNorm && !phoneNorm) {
       throw new BadRequestException('Informe ao menos email ou telefone.');
     }
     if (hasExplicitSourceSystem && !sourceRefNorm) {
       throw new BadRequestException('Informe sourceRef quando sourceSystem existir.');
+    }
+    if (utmCampaignTrimmed && !hasExplicitSourceSystem) {
+      throw new BadRequestException('Informe sourceSystem quando utm_campaing existir.');
     }
 
     const emailRaw = typeof input.email === 'string' ? input.email.trim() : null;
@@ -99,6 +105,23 @@ export class LeadsImportService {
         sourceSystem: sourceSystemNorm,
         sourceRef: sourceRefNorm ?? `lead:${leadId}`,
         meta: input.meta ?? {},
+      });
+    }
+
+    // 3.2) Registra evento de captura de UTM campaign (quando presente).
+    if (utmCampaignTrimmed && sourceSystemNorm && sourceRefNorm && utmCampaignNorm) {
+      const nowIso = new Date().toISOString();
+      await this.repository.createLeadEvent({
+        leadId,
+        eventType: 'utm_campaign.captured',
+        sourceSystem: sourceSystemNorm,
+        occurredAt: nowIso,
+        ingestedAt: nowIso,
+        dedupeKey: `${sourceSystemNorm}:import-one:${sourceRefNorm}:${leadId}:utm_campaign:${utmCampaignNorm}`,
+        payload: {
+          utm_campaign: utmCampaignTrimmed,
+          source_ref: sourceRefNorm,
+        },
       });
     }
 
