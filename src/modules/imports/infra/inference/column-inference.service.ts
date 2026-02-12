@@ -271,6 +271,10 @@ export class ColumnInferenceService implements ColumnInferencePort {
     'número do telefone',
     'numero do celular',
     'número do celular',
+    'qual seu numero de whatsapp',
+    'qual seu número de whatsapp',
+    'qual seu numero do whatsapp',
+    'qual seu número do whatsapp',
   ];
 
   private readonly phoneExclusionPatterns = [
@@ -610,7 +614,9 @@ export class ColumnInferenceService implements ColumnInferencePort {
   private normalizeKey(key: string): string {
     return key
       .toLowerCase()
-      .replace(/[_\s\-]+/g, ' ')
+      .replace(/[\-\_]+/g, ' ')
+      .replace(/[^a-z0-9áàâãéèêíìîóòôõúùûç\s]+/g, '')
+      .replace(/\s+/g, ' ')
       .trim();
   }
 
