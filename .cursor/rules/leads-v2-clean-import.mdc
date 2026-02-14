@@ -6,7 +6,7 @@ alwaysApply: true
 # Regras para importação de leads v2
 
 - Separe normalização/validação dos dados de entrada em um componente dedicado (ex: `LeadImportNormalizer`). O serviço de nível superior deve receber dados prontos para orquestrar persistência.
-- Evite strings mágicas espalhadas. Use constantes ou helpers para mensagens de erro, fontes (`sourceRef`, eventos, meta tags) e tipos de identificador (`LeadIdentifierTypeV2`).
+- Evite strings mágicas espalhadas. Use constantes ou helpers para mensagens de erro, fontes (`sourceRef`, eventos, meta tags) e tipos de identificador (`LeadIdentifierTypeV2`). Centralize esses enums/constantes em pastas globais (ex: `src/shared/enums`) para que qualquer camada os reutilize sem depender diretamente do Prisma.
 - Filtre a lógica de criação de eventos/tags em helpers específicos (`lead-import-records.ts`) para construir `dedupeKey`, payload e metadados sem repetir padrões.
 - Garanta que o serviço principal apenas:
   - determine o lead alvo (criando ou buscando),

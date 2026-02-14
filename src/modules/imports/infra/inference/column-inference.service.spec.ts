@@ -24,5 +24,28 @@ describe('ColumnInferenceService', () => {
 
     expect(inferred.phoneKey).toBe(whatsappHeader);
   });
+
+  it('detecta sobrenome quando existe Nome + Sobrenome', () => {
+    const sut = new ColumnInferenceService();
+
+    const emailHeader = 'E-mail';
+    const nameHeader = 'Nome';
+    const surnameHeader = 'Sobrenome';
+
+    const headers = [emailHeader, nameHeader, surnameHeader];
+    const rows = [
+      {
+        [emailHeader]: 'maria@example.com',
+        [nameHeader]: 'Maria',
+        [surnameHeader]: 'Silva',
+      },
+    ];
+
+    const inferred = sut.infer(headers, rows);
+
+    expect(inferred.nameKey).toBe(nameHeader);
+    expect(inferred.surnameKey).toBe(surnameHeader);
+    expect(inferred.fullNameKey).toBeNull();
+  });
 });
 

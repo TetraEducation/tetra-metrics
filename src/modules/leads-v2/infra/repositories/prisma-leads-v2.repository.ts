@@ -10,6 +10,12 @@ import type {
 import type { LeadV2 } from '@/modules/leads-v2/domain/lead-v2';
 import { normalizeEmail, normalizeText } from '@/modules/imports/application/utils/normalize';
 import type { LeadDetailDto } from '@/modules/leads/application/dto/lead-detail.dto';
+import {
+  LeadIdentifierTypeOptions,
+} from '@/shared/enums/lead-identifier-type.enum';
+import type {
+  LeadIdentifierType as SharedLeadIdentifierType,
+} from '@/shared/enums/lead-identifier-type.enum';
 
 const normalizePhoneValue = (value?: string | null): string | null => {
   if (!value) return null;
@@ -51,26 +57,26 @@ type PrismaV2Client = {
       orderBy?: { createdAt: 'desc' };
     }) => Promise<{ id: string } | null>;
   };
-  leadIdentifiers: {
-    create: (args: {
-      data: {
-        leadId: string;
-        type: string;
-        value: string;
-        valueNormalized: string;
-        isPrimary: boolean;
-      };
-    }) => Promise<unknown>;
-    updateMany: (args: {
-      where: { type: string; valueNormalized: string };
-      data: { isPrimary: boolean; value: string };
-    }) => Promise<unknown>;
-    findFirst: (args: {
-      where: { type: string; valueNormalized: string };
-      select: { leadId: true };
-    }) => Promise<{ leadId: string } | null>;
-    findMany: (args: {
-      where: { leadId: string };
+    leadIdentifiers: {
+      create: (args: {
+        data: {
+          leadId: string;
+          type: SharedLeadIdentifierType;
+          value: string;
+          valueNormalized: string;
+          isPrimary: boolean;
+        };
+      }) => Promise<unknown>;
+      updateMany: (args: {
+        where: { type: SharedLeadIdentifierType; valueNormalized: string };
+        data: { isPrimary: boolean; value: string };
+      }) => Promise<unknown>;
+      findFirst: (args: {
+        where: { type: SharedLeadIdentifierType; valueNormalized: string };
+        select: { leadId: true };
+      }) => Promise<{ leadId: string } | null>;
+      findMany: (args: {
+        where: { leadId: string };
       orderBy: Array<{ isPrimary: 'desc' } | { createdAt: 'asc' }>;
     }) => Promise<
       Array<{
@@ -249,7 +255,7 @@ export class PrismaLeadsV2Repository implements LeadsV2RepositoryPort {
       const emailNorm = normalizeEmail(params.email);
       if (emailNorm) {
         const emailHit = await this.prisma.leadIdentifiers.findFirst({
-          where: { type: 'email', valueNormalized: emailNorm },
+          where: { type: LeadIdentifierTypeOptions.EMAIL, valueNormalized: emailNorm },
           select: { leadId: true },
         });
         if (emailHit) return emailHit.leadId;
@@ -260,7 +266,7 @@ export class PrismaLeadsV2Repository implements LeadsV2RepositoryPort {
       const phoneNorm = normalizePhoneValue(params.phone);
       if (phoneNorm) {
         const phoneHit = await this.prisma.leadIdentifiers.findFirst({
-          where: { type: 'phone', valueNormalized: phoneNorm },
+          where: { type: LeadIdentifierTypeOptions.PHONE, valueNormalized: phoneNorm },
           select: { leadId: true },
         });
         if (phoneHit) return phoneHit.leadId;
@@ -577,17 +583,25 @@ export class PrismaLeadsV2Repository implements LeadsV2RepositoryPort {
     dedupeKey: string;
     payload?: Record<string, unknown> | null;
   }): Promise<void> {
-    await this.prisma.leadEvents.create({
-      data: {
-        leadId: params.leadId,
-        eventType: params.eventType,
-        sourceSystem: params.sourceSystem,
-        occurredAt: new Date(params.occurredAt),
-        ingestedAt: new Date(params.ingestedAt),
-        dedupeKey: params.dedupeKey,
-        payload: params.payload ?? {},
-      },
-    });
+    try {
+      await this.prisma.leadEvents.create({
+        data: {
+          leadId: params.leadId,
+          eventType: params.eventType,
+          sourceSystem: params.sourceSystem,
+          occurredAt: new Date(params.occurredAt),
+          ingestedAt: new Date(params.ingestedAt),
+          dedupeKey: params.dedupeKey,
+          payload: params.payload ?? {},
+        },
+      });
+    } catch (error) {
+      // Idempotência: em reprocessamento/retry, o mesmo dedupe_key pode já existir.
+      if (this.isUniqueViolation(error)) {
+        return;
+      }
+      throw error;
+    }
   }
 
   private mapLead(row: { id: string; name: string | null; createdAt: Date }): LeadV2 {

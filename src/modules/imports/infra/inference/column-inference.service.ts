@@ -239,6 +239,20 @@ export class ColumnInferenceService implements ColumnInferencePort {
     'in the last',
   ];
 
+  private readonly firstNamePatterns = [
+    'nome',
+    'first name',
+    'primeiro nome',
+    'given name',
+  ];
+
+  private readonly surnamePatterns = [
+    'sobrenome',
+    'last name',
+    'surname',
+    'ultimo nome',
+  ];
+
   private readonly phonePatterns = [
     'telefone',
     'phone',
@@ -467,16 +481,20 @@ export class ColumnInferenceService implements ColumnInferencePort {
 
     const phoneKey = this.findBestPhoneColumn(normalizedHeaders, headers, rows);
 
-    const fullNameKey = this.findBestNameColumn(normalizedHeaders, headers, rows, phoneKey);
+    const fullNameKey = this.findBestFullNameColumn(normalizedHeaders, headers, rows, phoneKey);
+    const nameKey = fullNameKey ?? this.findBestFirstNameColumn(normalizedHeaders, headers);
+    const surnameKey = this.findBestSurnameColumn(normalizedHeaders, headers);
 
     return {
       emailKey,
       fullNameKey,
+      nameKey,
+      surnameKey,
       phoneKey,
     };
   }
 
-  private findBestNameColumn(
+  private findBestFullNameColumn(
     normalizedHeaders: string[],
     originalHeaders: string[],
     rows: Array<Record<string, unknown>>,
@@ -560,19 +578,24 @@ export class ColumnInferenceService implements ColumnInferencePort {
 
     candidateIndices.sort((a, b) => b.score - a.score);
 
+    const hasSobrenome = normalizedHeaders.some(
+      (h) =>
+        h.includes('sobrenome') ||
+        h.includes('last name') ||
+        h.includes('surname') ||
+        h.includes('ultimo nome'),
+    );
+
     const strongCandidates = candidateIndices.filter((c) => c.isStrong);
     if (strongCandidates.length > 0) {
       if (strongCandidates.length === 1) {
+        const normalized = normalizedHeaders[strongCandidates[0].index];
+        const isGenericFirstName = normalized === 'nome' || normalized === 'name';
+        if (hasSobrenome && isGenericFirstName) {
+          return null;
+        }
         return originalHeaders[strongCandidates[0].index];
       }
-
-      const hasSobrenome = normalizedHeaders.some(
-        (h) =>
-          h.includes('sobrenome') ||
-          h.includes('last name') ||
-          h.includes('surname') ||
-          h.includes('ultimo nome'),
-      );
 
       for (const candidate of strongCandidates) {
         const normalized = normalizedHeaders[candidate.index];
@@ -594,6 +617,10 @@ export class ColumnInferenceService implements ColumnInferencePort {
             }
           }
         }
+      }
+
+      if (hasSobrenome) {
+        return null;
       }
 
       return originalHeaders[strongCandidates[0].index];
@@ -618,6 +645,54 @@ export class ColumnInferenceService implements ColumnInferencePort {
       .replace(/[^a-z0-9áàâãéèêíìîóòôõúùûç\s]+/g, '')
       .replace(/\s+/g, ' ')
       .trim();
+  }
+
+  private findBestFirstNameColumn(
+    normalizedHeaders: string[],
+    originalHeaders: string[],
+  ): string | null {
+    for (const pattern of this.firstNamePatterns) {
+      const exactIndex = normalizedHeaders.findIndex((header) => header === pattern);
+      if (exactIndex !== -1) {
+        return originalHeaders[exactIndex];
+      }
+
+      const prefixIndex = normalizedHeaders.findIndex((header) => header.startsWith(pattern + ' '));
+      if (prefixIndex !== -1) {
+        return originalHeaders[prefixIndex];
+      }
+
+      const containsIndex = normalizedHeaders.findIndex((header) => header.includes(pattern));
+      if (containsIndex !== -1) {
+        return originalHeaders[containsIndex];
+      }
+    }
+
+    return null;
+  }
+
+  private findBestSurnameColumn(
+    normalizedHeaders: string[],
+    originalHeaders: string[],
+  ): string | null {
+    for (const pattern of this.surnamePatterns) {
+      const exactIndex = normalizedHeaders.findIndex((header) => header === pattern);
+      if (exactIndex !== -1) {
+        return originalHeaders[exactIndex];
+      }
+
+      const prefixIndex = normalizedHeaders.findIndex((header) => header.startsWith(pattern + ' '));
+      if (prefixIndex !== -1) {
+        return originalHeaders[prefixIndex];
+      }
+
+      const containsIndex = normalizedHeaders.findIndex((header) => header.includes(pattern));
+      if (containsIndex !== -1) {
+        return originalHeaders[containsIndex];
+      }
+    }
+
+    return null;
   }
 
   private findBestPhoneColumn(

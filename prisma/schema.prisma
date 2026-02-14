@@ -24,18 +24,35 @@ enum LeadEventType {
   LEAD_IMPORTED
 }
 
+enum JobRunStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+enum FormQuestionDataType {
+  text
+  number
+  bool
+  date
+  select
+  unknown
+}
+
 model Leads {
-  id             String            @id @default(cuid()) @map("lead_id")
-  name           String            @map("full_name")
-  document       String?           @map("document")
-  firstContactAt DateTime?         @map("first_contact_at") @db.Timestamptz(6)
-  lastActivityAt DateTime?         @map("last_activity_at") @db.Timestamptz(6)
-  createdAt      DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt      DateTime          @default(now()) @map("updated_at") @db.Timestamptz(6)
-  identifiers    LeadIdentifiers[]
-  sources        LeadSources[]
-  tags           LeadTags[]
-  events         LeadEvents[]
+  id              String            @id @default(cuid()) @map("lead_id")
+  name            String            @map("full_name")
+  document        String?           @map("document")
+  firstContactAt  DateTime?         @map("first_contact_at") @db.Timestamptz(6)
+  lastActivityAt  DateTime?         @map("last_activity_at") @db.Timestamptz(6)
+  createdAt       DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime          @default(now()) @map("updated_at") @db.Timestamptz(6)
+  identifiers     LeadIdentifiers[]
+  sources         LeadSources[]
+  tags            LeadTags[]
+  events          LeadEvents[]
+  formSubmissions FormSubmissions[]
 
   @@index([lastActivityAt], map: "idx_leads_last_activity")
   @@map("leads")
@@ -74,16 +91,17 @@ model LeadSources {
 }
 
 model Tags {
-  id            String       @id @default(cuid()) @map("tag_id")
-  key           String       @map("key")
-  keyNormalized String       @map("key_normalized")
-  name          String       @map("name")
-  category      String       @map("category")
-  weight        Int          @default(1) @map("weight")
-  createdAt     DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt     DateTime     @default(now()) @map("updated_at") @db.Timestamptz(6)
+  id            String        @id @default(cuid()) @map("tag_id")
+  key           String        @map("key")
+  keyNormalized String        @map("key_normalized")
+  name          String        @map("name")
+  category      String        @map("category")
+  weight        Int           @default(1) @map("weight")
+  createdAt     DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime      @default(now()) @map("updated_at") @db.Timestamptz(6)
   aliases       TagAliases[]
   leadTags      LeadTags[]
+  formSchemas   FormSchemas[]
 
   @@unique([keyNormalized], map: "uq_tags_key_normalized")
   @@map("tags")
@@ -92,7 +110,7 @@ model Tags {
 model TagAliases {
   id           String @id @default(cuid()) @map("tag_alias_id")
   tagId        String @map("tag_id")
-  sourceSystem String @map("source_system")
+  sourceSystem LeadSourceSystem @map("source_system")
   sourceKey    String @map("source_key")
   tag          Tags   @relation(fields: [tagId], references: [id], onDelete: Cascade)
 
@@ -104,7 +122,7 @@ model TagAliases {
 model LeadTags {
   leadId       String   @map("lead_id")
   tagId        String   @map("tag_id")
-  sourceSystem String   @map("source_system")
+  sourceSystem LeadSourceSystem   @map("source_system")
   sourceRef    String?  @map("source_ref")
   firstSeenAt  DateTime @map("first_seen_at") @db.Timestamptz(6)
   lastSeenAt   DateTime @map("last_seen_at") @db.Timestamptz(6)
@@ -115,6 +133,86 @@ model LeadTags {
   @@id([leadId, tagId, sourceSystem], map: "pk_lead_tags")
   @@index([tagId], map: "idx_lead_tags_tag_id")
   @@map("lead_tags")
+}
+
+model FormSchemas {
+  id             String   @id @default(cuid()) @map("form_schema_id")
+  sourceSystem   LeadSourceSystem   @map("source_system")
+  sourceRef      String   @map("source_ref")
+  name           String   @map("name")
+  nameNormalized String   @map("name_normalized")
+  tagId          String?  @map("tag_id")
+  meta           Json     @default("{}")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  tag         Tags?             @relation(fields: [tagId], references: [id], onDelete: SetNull)
+  questions   FormQuestions[]   @relation("FormSchemaQuestions")
+  submissions FormSubmissions[] @relation("FormSchemaSubmissions")
+
+  @@unique([sourceSystem, sourceRef], map: "form_schemas_source_system_source_ref_unique")
+  @@map("form_schemas")
+}
+
+model FormQuestions {
+  id            String               @id @default(cuid())
+  formSchemaId  String               @map("form_schema_id")
+  key           String
+  keyNormalized String               @map("key_normalized")
+  label         String
+  position      Int
+  dataType      FormQuestionDataType @default(text) @map("data_type")
+  meta          Json                 @default("{}")
+  createdAt     DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime             @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  formSchema FormSchemas   @relation("FormSchemaQuestions", fields: [formSchemaId], references: [id], onDelete: Cascade)
+  answers    FormAnswers[] @relation("QuestionAnswers")
+
+  @@unique([formSchemaId, keyNormalized], map: "form_questions_form_schema_id_key_normalized_unique")
+  @@index([formSchemaId], map: "form_questions_form_schema_id_idx")
+  @@map("form_questions")
+}
+
+model FormSubmissions {
+  id           String    @id @default(cuid())
+  formSchemaId String    @map("form_schema_id")
+  leadId       String?   @map("lead_id")
+  submittedAt  DateTime? @map("submitted_at") @db.Timestamptz(6)
+  sourceRef    String?   @map("source_ref")
+  dedupeKey    String?   @map("dedupe_key")
+  rawPayload   Json      @default("{}") @map("raw_payload")
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime  @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  formSchema FormSchemas   @relation("FormSchemaSubmissions", fields: [formSchemaId], references: [id], onDelete: Cascade)
+  lead       Leads?        @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  answers    FormAnswers[] @relation("SubmissionAnswers")
+
+  @@unique([formSchemaId, dedupeKey], map: "form_submissions_form_schema_id_dedupe_key_unique")
+  @@index([formSchemaId], map: "form_submissions_form_schema_id_idx")
+  @@index([leadId], map: "form_submissions_lead_id_idx")
+  @@index([dedupeKey], map: "form_submissions_dedupe_key_idx")
+  @@map("form_submissions")
+}
+
+model FormAnswers {
+  id               String   @id @default(cuid()) @map("form_answer_id")
+  formSubmissionId String   @map("form_submission_id")
+  questionId       String   @map("question_id")
+  valueText        String?  @map("value_text")
+  valueNumber      Decimal? @map("value_number") @db.Decimal(10, 2)
+  valueBool        Boolean? @map("value_bool")
+  valueJson        Json?    @map("value_json")
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  submission FormSubmissions @relation("SubmissionAnswers", fields: [formSubmissionId], references: [id], onDelete: Cascade)
+  question   FormQuestions   @relation("QuestionAnswers", fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([formSubmissionId, questionId], map: "form_answers_form_submission_id_question_id_unique")
+  @@index([formSubmissionId], map: "form_answers_form_submission_id_idx")
+  @@index([questionId], map: "form_answers_question_id_idx")
+  @@map("form_answers")
 }
 
 model LeadEvents {
@@ -133,4 +231,33 @@ model LeadEvents {
   @@index([sourceSystem], map: "idx_lead_events_source_system")
   @@index([dedupeKey], map: "idx_lead_events_dedupe_key")
   @@map("lead_events")
+}
+
+model JobRuns {
+  id               String           @id @default(cuid()) @map("job_run_id")
+  jobName          String           @map("job_name")
+  status           JobRunStatus     @map("status")
+  fileName         String           @map("file_name")
+  filePath         String           @map("file_path")
+  fileHash         String           @map("file_hash")
+  sourceSystem     LeadSourceSystem @map("source_system")
+  tagKey           String           @map("tag_key")
+  startedAt        DateTime?        @map("started_at") @db.Timestamptz(6)
+  finishedAt       DateTime?        @map("finished_at") @db.Timestamptz(6)
+  lastProcessedRow Int              @default(0) @map("last_processed_row")
+  totalRows        Int?             @map("total_rows")
+  processedRows    Int              @default(0) @map("processed_rows")
+  processedOk      Int              @default(0) @map("processed_ok")
+  processedErrors  Int              @default(0) @map("processed_errors")
+  retryCount       Int              @default(0) @map("retry_count")
+  errorMessage     String?          @map("error_message")
+  meta             Json             @default("{}")
+  createdAt        DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime         @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([fileHash], map: "uq_job_runs_file_hash")
+  @@index([status], map: "idx_job_runs_status")
+  @@index([createdAt], map: "idx_job_runs_created_at")
+  @@index([jobName, status], map: "idx_job_runs_job_name_status")
+  @@map("job_runs")
 }

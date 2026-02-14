@@ -5,6 +5,7 @@ import {
   type LeadsV2RepositoryPort,
 } from '@/modules/leads-v2/application/ports/leads-v2-repository.port';
 import type { LeadIdentifierTypeV2, LeadV2 } from '@/modules/leads-v2/domain/lead-v2';
+import { LeadIdentifierTypeOptions } from '@/shared/enums/lead-identifier-type.enum';
 import { LeadImportNormalizer } from '@/modules/leads-v2/application/services/lead-import-normalizer';
 import {
   buildImportCampaignMeta,
@@ -19,8 +20,8 @@ export type ImportOneLeadV2Result = {
   phoneIgnoredDueToConflict: boolean;
 };
 
-const EMAIL_IDENTIFIER: LeadIdentifierTypeV2 = 'email';
-const PHONE_IDENTIFIER: LeadIdentifierTypeV2 = 'phone';
+const EMAIL_IDENTIFIER: LeadIdentifierTypeV2 = LeadIdentifierTypeOptions.EMAIL;
+const PHONE_IDENTIFIER: LeadIdentifierTypeV2 = LeadIdentifierTypeOptions.PHONE;
 
 @Injectable()
 export class LeadsV2ImportService {
