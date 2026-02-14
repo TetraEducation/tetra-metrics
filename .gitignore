@@ -79,3 +79,5 @@ dumps/dumps_chunks/
 *.backup
 *.bak
 *.sql.bak
+
+/generated/prisma

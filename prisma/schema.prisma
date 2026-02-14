@@ -1,0 +1,44 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum LeadIdentifierType {
+  EMAIL
+  PHONE
+}
+
+model Leads {
+  id             String            @id @default(cuid()) @map("lead_id")
+  name           String            @map("full_name")
+  document       String?           @map("document")
+  firstContactAt DateTime?         @map("first_contact_at") @db.Timestamptz(6)
+  lastActivityAt DateTime?         @map("last_activity_at") @db.Timestamptz(6)
+  createdAt      DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime          @default(now()) @map("updated_at") @db.Timestamptz(6)
+  identifiers    LeadIdentifiers[]
+
+  @@index([lastActivityAt], map: "idx_leads_last_activity")
+  @@map("leads")
+}
+
+model LeadIdentifiers {
+  id              String             @id @default(cuid()) @map("lead_identifier_id")
+  leadId          String             @map("lead_id")
+  type            LeadIdentifierType @map("type")
+  value           String             @map("value")
+  valueNormalized String             @map("value_normalized")
+  isPrimary       Boolean            @default(false) @map("is_primary")
+  createdAt       DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime           @default(now()) @map("updated_at") @db.Timestamptz(6)
+  lead            Leads              @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@unique([type, valueNormalized], map: "uq_lead_identifiers_type_value_norm")
+  @@index([leadId], map: "idx_lead_identifiers_lead_id")
+  @@index([leadId, isPrimary(sort: Desc)], map: "idx_lead_identifiers_primary")
+  @@map("lead_identifiers")
+}

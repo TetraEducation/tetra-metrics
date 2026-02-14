@@ -83,6 +83,86 @@ Check out a few resources that may come in handy when working with NestJS:
 - To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
 - Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
 
+## Desenvolvimento local
+
+Para subir o PostgreSQL usado pelo Prisma em um ambiente de desenvolvimento, use o compose `docker-compose-dev.yaml`:
+
+```bash
+docker compose -f docker-compose-dev.yaml up -d db
+```
+
+O serviço `db` expõe a porta `6432` no host. Atualize o `DATABASE_URL` do seu `.env` ou crie um `.env.local` apontando para `postgresql://postgres:postgres@localhost:6432/postgres`.
+
+Quando quiser popular o banco, execute o serviço `seed`, que já roda `pnpm prisma:seed` com a mesma conexão usada pelo app:
+
+```bash
+docker compose -f docker-compose-dev.yaml run --rm seed
+```
+
+O serviço de seed usa os artefatos da aplicação para garantir que o Prisma esteja atualizado. Ele só roda quando você chamá-lo manualmente e depende do serviço `db`.
+
+## V2 (Prisma + PostgreSQL)
+
+A V2 foi iniciada sem alterar o fluxo da V1 (Supabase), usando conexão dedicada via `DATABASE_URL_V2`.
+
+### Modelagem inicial
+
+- `Leads` mapeado para tabela `leads` com `@@map("leads")`
+- `LeadIdentifiers` mapeado para tabela `lead_identifiers` com `@@map("lead_identifiers")`
+- Todas as colunas usam `@map(...)` para manter nomes de desenvolvimento na aplicação
+- `first_name` e `last_name` não existem na modelagem V2
+
+### Migrações V2
+
+```bash
+pnpm prisma:generate
+pnpm prisma:migrate:status:v2
+pnpm prisma:migrate:deploy:v2
+```
+
+Para criar uma nova migration de desenvolvimento:
+
+```bash
+pnpm prisma:migrate:dev:v2 -- --name nome_da_migration
+```
+
+### Endpoint V2
+
+Novo endpoint para importação incremental sem impactar a V1:
+
+```text
+POST /v2/leads/import-one
+```
+
+Payload mínimo:
+
+```json
+{
+  "name": "Nome do Lead",
+  "email": "lead@dominio.com",
+  "phone": "5511999999999"
+}
+```
+
+Regra atual: deduplica por email (preferencial) e usa telefone em best-effort.
+
+## Pipeline de testes com Jest + SWC
+
+- O Jest continua sendo o runner completo, agora com `@swc/jest` como transformer para transpilar `*.ts` rapidamente antes da execução.
+- A configuração no `package.json` habilita `decorators`, `decoratorMetadata` e `legacyDecorator`, mantendo compatibilidade com NestJS.
+- Coverage, mocks e moduleNameMapper seguem inalterados; apenas o transformer mudou.
+- Como o SWC não faz type-check, rodamos `pnpm tsc --noEmit` em paralelo (local ou CI) para garantir integridade de tipos.
+- Métrica observada nos testes unitários da base NestJS/ERP:
+  - `pnpm test` (antes, com `ts-jest`): ~6,6 s
+  - `pnpm test` (agora, com `@swc/jest`): ~1,3 s
+    Esses ganhos reduzem o ciclo de feedback e liberam capacidade na CI sem sacrificar a qualidade (desde que o `tsc --noEmit` continue rodando como gate de tipos).
+
+### Scripts úteis
+
+- `pnpm test` / `pnpm test:swc`: usa `@swc/jest` (configuração padrão no `package.json`) e é a escolha recomendada para a rotina diária / CI rápida.
+- `pnpm test:ts-jest`: executa a mesma bateria com `ts-jest`, útil para comparar contra o comportamento legado ou diagnosticar problemas que aparecem somente com o compilador oficial do TypeScript.
+- `pnpm check:types`: roda `tsc --noEmit` explicitamente (é esse comando que garante verificação de tipos, já que o SWC só transpila sem checar).
+
 ## Support
 
 Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).

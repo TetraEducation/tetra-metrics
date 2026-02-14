@@ -1,0 +1,36 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:latest
+    container_name: tetra_metrics_db_dev
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    ports:
+      - "6432:5432"
+    networks:
+      - app-net
+
+  seed:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      - db
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/postgres
+    entrypoint: ["pnpm", "prisma:seed"]
+    restart: "no"
+    networks:
+      - app-net
+
+volumes:
+  db-data:
+
+networks:
+  app-net:

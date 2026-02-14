@@ -8,6 +8,7 @@ import { MetricsModule } from '@/modules/metrics/metrics.module';
 import { ClintModule } from '@/modules/clint/clint.module';
 import { ActiveCampaignModule } from '@/modules/activecampaign/activecampaign.module';
 import { ImportsModule } from '@/modules/imports/imports.module';
+import { LeadsV2Module } from '@/modules/leads-v2/leads-v2.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { ImportsModule } from '@/modules/imports/imports.module';
     ClintModule,
     ActiveCampaignModule,
     ImportsModule,
+    LeadsV2Module,
   ],
   controllers: [],
   providers: [],

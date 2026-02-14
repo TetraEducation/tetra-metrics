@@ -1,3 +1,7 @@
+import emojiRegex from 'emoji-regex';
+
+const EMOJI_REGEX = emojiRegex();
+
 export function normalizeEmail(v?: unknown): string | null {
   if (typeof v !== 'string') return null;
   const email = v.trim().toLowerCase();
@@ -23,7 +27,16 @@ export function normalizeKey(input: string): string {
     .toLowerCase()
     .replace(/&/g, ' e ')
     .replace(/[^a-z0-9]+/g, '-')
-    .replace(/(^-|-$)+/g, '') 
-    .replace(/-+/g, '-'); 
+    .replace(/(^-|-$)+/g, '')
+    .replace(/-+/g, '-');
+}
+
+export function purgeEmoji(v?: unknown): string | null {
+  if (v == null) return null;
+  const cleaned = String(v)
+    .replace(EMOJI_REGEX, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return cleaned.length ? cleaned : null;
 }
 
