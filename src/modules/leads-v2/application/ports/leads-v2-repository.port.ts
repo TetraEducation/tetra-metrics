@@ -1,4 +1,5 @@
 import type { LeadIdentifierTypeV2, LeadV2 } from '@/modules/leads-v2/domain/lead-v2';
+import type { LeadDetailDto } from '@/modules/leads/application/dto/lead-detail.dto';
 
 export const LEADS_V2_REPOSITORY = Symbol('LEADS_V2_REPOSITORY');
 
@@ -20,7 +21,11 @@ export type LeadSourceSystemV2 = 'CLINT' | 'SPREADSHEET' | 'ACTIVECAMPAIGN' | 'F
 export type LeadEventTypeV2 = 'TAG_ADDED' | 'LEAD_IMPORTED';
 
 export interface LeadsV2RepositoryPort {
-  findLeadBySearch(params: { email?: string; phone?: string }): Promise<string | null>;
+  findLeadBySearch(params: {
+    email?: string | null;
+    phone?: string | null;
+    name?: string | null;
+  }): Promise<string | null>;
   createLead(payload: { name?: string | null }): Promise<LeadV2>;
   attachIdentifiers(
     leadId: string,
@@ -29,6 +34,7 @@ export interface LeadsV2RepositoryPort {
   updateLead(id: string, payload: { name: string }): Promise<void>;
   deleteLeads(ids: string[]): Promise<void>;
   getLeadById(id: string): Promise<LeadV2>;
+  getLeadDetailById(leadId: string): Promise<LeadDetailDto>;
   upsertLeadSource(params: {
     leadId: string;
     sourceSystem: LeadSourceSystemV2;

@@ -2,7 +2,6 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { ImportLeadV2Input } from '@/modules/leads-v2/application/dto/import-lead-v2.input';
 import {
   LEADS_V2_REPOSITORY,
-  type LeadSourceSystemV2,
   type LeadsV2RepositoryPort,
 } from '@/modules/leads-v2/application/ports/leads-v2-repository.port';
 import type { LeadIdentifierTypeV2, LeadV2 } from '@/modules/leads-v2/domain/lead-v2';

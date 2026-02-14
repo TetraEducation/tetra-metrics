@@ -1,11 +1,27 @@
-import { Body, Controller, Post, UsePipes, ValidationPipe } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  Query,
+  UsePipes,
+  ValidationPipe,
+} from '@nestjs/common';
 import type { ImportLeadV2Input } from '@/modules/leads-v2/application/dto/import-lead-v2.input';
+import type { SearchLeadV2Dto } from '@/modules/leads-v2/application/dto/search-lead-v2.dto';
 import { LeadsV2ImportService } from '@/modules/leads-v2/application/services/leads-v2-import.service';
+import { LeadsV2SearchService } from '@/modules/leads-v2/application/services/leads-v2-search.service';
+import { LeadsV2DetailService } from '@/modules/leads-v2/application/services/leads-v2-detail.service';
 import { ImportOneLeadV2Dto } from '@/modules/leads-v2/interface/http/import-one-lead-v2.dto';
 
 @Controller('v2/leads')
 export class LeadsV2Controller {
-  constructor(private readonly leadsImport: LeadsV2ImportService) {}
+  constructor(
+    private readonly leadsImport: LeadsV2ImportService,
+    private readonly leadsSearch: LeadsV2SearchService,
+    private readonly leadsDetail: LeadsV2DetailService,
+  ) {}
 
   @Post('import-one')
   @UsePipes(
@@ -35,5 +51,21 @@ export class LeadsV2Controller {
       created: result.created,
       phoneIgnoredDueToConflict: result.phoneIgnoredDueToConflict,
     };
+  }
+
+  @Get('search')
+  @UsePipes(
+    new ValidationPipe({
+      transform: true,
+      whitelist: true,
+    }),
+  )
+  async search(@Query() query: SearchLeadV2Dto) {
+    return this.leadsSearch.searchLead(query);
+  }
+
+  @Get(':id/details')
+  async details(@Param('id') id: string) {
+    return this.leadsDetail.getLeadDetails(id);
   }
 }
