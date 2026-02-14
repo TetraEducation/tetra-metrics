@@ -19,6 +19,12 @@ export class LeadsV2Controller {
       name: body.name ?? null,
       email: body.email ?? null,
       phone: body.phone ?? null,
+      source: body.source ?? null,
+      sourceSystem: body.sourceSystem ?? null,
+      sourceRef: body.sourceRef ?? null,
+      meta: body.meta ?? null,
+      utm_campaign: body.utm_campaign ?? null,
+      utm_campaing: body.utm_campaing ?? null,
     } as ImportLeadV2Input;
 
     const result = await this.leadsImport.findOrCreateLeadByIdentifiers(input);

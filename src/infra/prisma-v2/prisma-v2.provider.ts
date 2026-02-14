@@ -1,6 +1,8 @@
 import { join } from 'node:path';
+import { existsSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import type { Provider } from '@nestjs/common';
+import { PrismaPg } from '@prisma/adapter-pg';
 
 export const PRISMA_V2 = Symbol('PRISMA_V2_CLIENT');
 
@@ -12,8 +14,17 @@ const requiredEnv = (name: string) => {
   return value;
 };
 
-const resolveGeneratedClientPath = () =>
-  process.env.PRISMA_V2_CLIENT_ENTRYPOINT ?? join(process.cwd(), 'generated', 'prisma', 'client.js');
+const resolveGeneratedClientPath = () => {
+  if (process.env.PRISMA_V2_CLIENT_ENTRYPOINT) {
+    return process.env.PRISMA_V2_CLIENT_ENTRYPOINT;
+  }
+
+  const clientBase = join(process.cwd(), 'generated', 'prisma', 'client');
+  const candidates = [`${clientBase}.js`, `${clientBase}.ts`];
+  const existing = candidates.find((candidate) => existsSync(candidate));
+
+  return existing ?? candidates[0];
+};
 
 export const prismaV2Provider: Provider = {
   provide: PRISMA_V2,
@@ -25,9 +36,8 @@ export const prismaV2Provider: Provider = {
     const moduleExports = (await import(clientUrl)) as { PrismaClient: PrismaClientCtor };
     const { PrismaClient } = moduleExports;
 
-    return new PrismaClient({
-      datasourceUrl: databaseUrl,
-      datasources: { db: { url: databaseUrl } },
-    });
+    const adapter = new PrismaPg({ connectionString: databaseUrl });
+
+    return new PrismaClient({ adapter });
   },
 };

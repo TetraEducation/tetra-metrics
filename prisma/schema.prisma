@@ -1,5 +1,5 @@
 generator client {
-  provider = "prisma-client"
+  provider = "prisma-client-js"
   output   = "../generated/prisma"
 }
 
@@ -12,6 +12,18 @@ enum LeadIdentifierType {
   PHONE
 }
 
+enum LeadSourceSystem {
+  CLINT
+  SPREADSHEET
+  ACTIVECAMPAIGN
+  FORM
+}
+
+enum LeadEventType {
+  TAG_ADDED
+  LEAD_IMPORTED
+}
+
 model Leads {
   id             String            @id @default(cuid()) @map("lead_id")
   name           String            @map("full_name")
@@ -21,6 +33,9 @@ model Leads {
   createdAt      DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt      DateTime          @default(now()) @map("updated_at") @db.Timestamptz(6)
   identifiers    LeadIdentifiers[]
+  sources        LeadSources[]
+  tags           LeadTags[]
+  events         LeadEvents[]
 
   @@index([lastActivityAt], map: "idx_leads_last_activity")
   @@map("leads")
@@ -41,4 +56,81 @@ model LeadIdentifiers {
   @@index([leadId], map: "idx_lead_identifiers_lead_id")
   @@index([leadId, isPrimary(sort: Desc)], map: "idx_lead_identifiers_primary")
   @@map("lead_identifiers")
+}
+
+model LeadSources {
+  id           String           @id @default(cuid()) @map("lead_source_id")
+  leadId       String           @map("lead_id")
+  sourceSystem LeadSourceSystem @map("source_system")
+  sourceRef    String           @map("source_ref")
+  firstSeenAt  DateTime         @map("first_seen_at") @db.Timestamptz(6)
+  lastSeenAt   DateTime         @map("last_seen_at") @db.Timestamptz(6)
+  meta         Json             @map("meta")
+  lead         Leads            @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@unique([sourceSystem, sourceRef], map: "uq_lead_sources_system_ref")
+  @@index([leadId], map: "idx_lead_sources_lead_id")
+  @@map("lead_sources")
+}
+
+model Tags {
+  id            String       @id @default(cuid()) @map("tag_id")
+  key           String       @map("key")
+  keyNormalized String       @map("key_normalized")
+  name          String       @map("name")
+  category      String       @map("category")
+  weight        Int          @default(1) @map("weight")
+  createdAt     DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime     @default(now()) @map("updated_at") @db.Timestamptz(6)
+  aliases       TagAliases[]
+  leadTags      LeadTags[]
+
+  @@unique([keyNormalized], map: "uq_tags_key_normalized")
+  @@map("tags")
+}
+
+model TagAliases {
+  id           String @id @default(cuid()) @map("tag_alias_id")
+  tagId        String @map("tag_id")
+  sourceSystem String @map("source_system")
+  sourceKey    String @map("source_key")
+  tag          Tags   @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@unique([sourceSystem, sourceKey], map: "uq_tag_aliases_source_system_key")
+  @@index([tagId], map: "idx_tag_aliases_tag_id")
+  @@map("tag_aliases")
+}
+
+model LeadTags {
+  leadId       String   @map("lead_id")
+  tagId        String   @map("tag_id")
+  sourceSystem String   @map("source_system")
+  sourceRef    String?  @map("source_ref")
+  firstSeenAt  DateTime @map("first_seen_at") @db.Timestamptz(6)
+  lastSeenAt   DateTime @map("last_seen_at") @db.Timestamptz(6)
+  meta         Json     @map("meta")
+  lead         Leads    @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  tag          Tags     @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([leadId, tagId, sourceSystem], map: "pk_lead_tags")
+  @@index([tagId], map: "idx_lead_tags_tag_id")
+  @@map("lead_tags")
+}
+
+model LeadEvents {
+  id           String           @id @default(cuid()) @map("event_id")
+  leadId       String           @map("lead_id")
+  eventType    LeadEventType    @map("event_type")
+  sourceSystem LeadSourceSystem @map("source_system")
+  occurredAt   DateTime         @map("occurred_at") @db.Timestamptz(6)
+  ingestedAt   DateTime         @map("ingested_at") @db.Timestamptz(6)
+  dedupeKey    String?          @map("dedupe_key")
+  payload      Json             @map("payload")
+  lead         Leads            @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@unique([dedupeKey], map: "uq_lead_events_dedupe_key")
+  @@index([leadId], map: "idx_lead_events_lead_id")
+  @@index([sourceSystem], map: "idx_lead_events_source_system")
+  @@index([dedupeKey], map: "idx_lead_events_dedupe_key")
+  @@map("lead_events")
 }

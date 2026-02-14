@@ -1,4 +1,4 @@
-import { IsEmail, IsOptional, IsString } from 'class-validator';
+import { IsEmail, IsOptional, IsObject, IsString, ValidateIf } from 'class-validator';
 
 export class ImportOneLeadV2Dto {
   @IsOptional()
@@ -13,4 +13,29 @@ export class ImportOneLeadV2Dto {
   @IsOptional()
   @IsString()
   phone?: string;
+
+  @IsOptional()
+  @IsString()
+  source?: string;
+
+  @IsOptional()
+  @IsString()
+  sourceSystem?: string;
+
+  @ValidateIf((o: ImportOneLeadV2Dto) => Boolean(o.sourceSystem))
+  @IsString()
+  sourceRef?: string;
+
+  @IsOptional()
+  @IsObject()
+  meta?: Record<string, unknown>;
+
+  @IsOptional()
+  @IsString()
+  utm_campaing?: string;
+
+  // Campo correto (mantemos o legado `utm_campaing` por compatibilidade).
+  @IsOptional()
+  @IsString()
+  utm_campaign?: string;
 }

@@ -1,0 +1,16 @@
+---
+description: Padroniza atualizações da importação de leads garantindo responsabilidades separadas e sem magic strings.
+alwaysApply: true
+---
+
+# Regras para importação de leads v2
+
+- Separe normalização/validação dos dados de entrada em um componente dedicado (ex: `LeadImportNormalizer`). O serviço de nível superior deve receber dados prontos para orquestrar persistência.
+- Evite strings mágicas espalhadas. Use constantes ou helpers para mensagens de erro, fontes (`sourceRef`, eventos, meta tags) e tipos de identificador (`LeadIdentifierTypeV2`).
+- Filtre a lógica de criação de eventos/tags em helpers específicos (`lead-import-records.ts`) para construir `dedupeKey`, payload e metadados sem repetir padrões.
+- Garanta que o serviço principal apenas:
+  - determine o lead alvo (criando ou buscando),
+  - anexe identificadores,
+  - atualize campos essenciais,
+  - invoque portas (referências, eventos, tags) com os dados normalizados.
+- Quando a IA sugerir alterações nesta área, lembre-se de validar o fluxo com testes (ex: `test/v2/leads-v2-import.spec.ts`) para confirmar conflitos e eventos.
