@@ -146,9 +146,9 @@ model FormSchemas {
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt      DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
 
-  tag         Tags?             @relation(fields: [tagId], references: [id], onDelete: SetNull)
-  questions   FormQuestions[]   @relation("FormSchemaQuestions")
-  submissions FormSubmissions[] @relation("FormSchemaSubmissions")
+  tag           Tags?                 @relation(fields: [tagId], references: [id], onDelete: SetNull)
+  questionLinks FormSchemaQuestions[] @relation("SchemaQuestionLinks")
+  submissions   FormSubmissions[]     @relation("FormSchemaSubmissions")
 
   @@unique([sourceSystem, sourceRef], map: "form_schemas_source_system_source_ref_unique")
   @@map("form_schemas")
@@ -156,7 +156,6 @@ model FormSchemas {
 
 model FormQuestions {
   id            String               @id @default(cuid())
-  formSchemaId  String               @map("form_schema_id")
   key           String
   keyNormalized String               @map("key_normalized")
   label         String
@@ -166,12 +165,24 @@ model FormQuestions {
   createdAt     DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt     DateTime             @default(now()) @map("updated_at") @db.Timestamptz(6)
 
-  formSchema FormSchemas   @relation("FormSchemaQuestions", fields: [formSchemaId], references: [id], onDelete: Cascade)
-  answers    FormAnswers[] @relation("QuestionAnswers")
+  schemaLinks FormSchemaQuestions[] @relation("QuestionSchemaLinks")
+  answers     FormAnswers[]         @relation("QuestionAnswers")
 
-  @@unique([formSchemaId, keyNormalized], map: "form_questions_form_schema_id_key_normalized_unique")
-  @@index([formSchemaId], map: "form_questions_form_schema_id_idx")
+  @@unique([keyNormalized], map: "form_questions_key_normalized_unique")
   @@map("form_questions")
+}
+
+model FormSchemaQuestions {
+  formSchemaId String   @map("form_schema_id")
+  questionId   String   @map("question_id")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  formSchema FormSchemas   @relation("SchemaQuestionLinks", fields: [formSchemaId], references: [id], onDelete: Cascade)
+  question   FormQuestions @relation("QuestionSchemaLinks", fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@id([formSchemaId, questionId], map: "form_schema_questions_pkey")
+  @@index([questionId], map: "form_schema_questions_question_id_idx")
+  @@map("form_schema_questions")
 }
 
 model FormSubmissions {

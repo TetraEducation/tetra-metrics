@@ -32,7 +32,9 @@ import { LeadsV2ImportService } from '@/modules/leads-v2/application/services/le
 import { LeadsV2SearchService } from '@/modules/leads-v2/application/services/leads-v2-search.service';
 import { LeadsV2DetailService } from '@/modules/leads-v2/application/services/leads-v2-detail.service';
 import { LeadsV2SpreadsheetJobsService } from '@/modules/leads-v2/application/services/leads-v2-spreadsheet-jobs.service';
+import { LeadsV2SurveySpreadsheetJobsService } from '@/modules/leads-v2/application/services/leads-v2-survey-spreadsheet-jobs.service';
 import { ImportSpreadsheetV2Dto } from '@/modules/leads-v2/interface/http/import-spreadsheet-v2.dto';
+import { ImportSurveySpreadsheetV2Dto } from '@/modules/leads-v2/interface/http/import-survey-spreadsheet-v2.dto';
 import { ImportOneLeadV2Dto } from '@/modules/leads-v2/interface/http/import-one-lead-v2.dto';
 import {
   ListLeadsV2JobRunsQueryDto,
@@ -51,6 +53,7 @@ export class LeadsV2Controller {
     private readonly leadsSearch: LeadsV2SearchService,
     private readonly leadsDetail: LeadsV2DetailService,
     private readonly spreadsheetJobs: LeadsV2SpreadsheetJobsService,
+    private readonly surveySpreadsheetJobs: LeadsV2SurveySpreadsheetJobsService,
   ) {}
 
   @Post('import-one')
@@ -149,6 +152,71 @@ export class LeadsV2Controller {
     }
 
     const queued = await this.spreadsheetJobs.queueSpreadsheet({
+      file,
+      sourceSystem: body.sourceSystem,
+      tagKey: body.tagKey,
+    });
+
+    return {
+      ok: true,
+      jobRunId: queued.jobRunId,
+      status: queued.status,
+    };
+  }
+
+  @Post('import-survey-spreadsheet')
+  @ApiOperation({
+    summary: 'Enfileira importação de planilha de perguntas/respostas na V2',
+    description:
+      'Recebe a planilha, salva em disco e cria um job para processamento assíncrono de surveys com checkpoint.',
+  })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        file: {
+          type: 'string',
+          format: 'binary',
+        },
+        sourceSystem: {
+          type: 'string',
+          example: 'spreadsheet',
+        },
+        tagKey: {
+          type: 'string',
+          example: 'CPB2',
+        },
+      },
+      required: ['file'],
+    },
+  })
+  @ApiCreatedResponse({
+    description: 'Planilha de survey recebida e job criado com sucesso.',
+    type: SpreadsheetImportQueuedResponseDto,
+  })
+  @HttpCode(202)
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: memoryStorage(),
+      limits: {
+        fileSize: 50 * 1024 * 1024,
+      },
+    }),
+  )
+  async importSurveySpreadsheet(
+    @UploadedFile() file: Express.Multer.File | undefined,
+    @Body() body: ImportSurveySpreadsheetV2Dto,
+  ): Promise<SpreadsheetImportQueuedResponseDto> {
+    if (!file) {
+      throw new BadRequestException('Arquivo ausente. Envie no campo "file".');
+    }
+
+    if (!file.buffer || file.buffer.length === 0) {
+      throw new BadRequestException('Arquivo está vazio ou inválido.');
+    }
+
+    const queued = await this.surveySpreadsheetJobs.queueSpreadsheet({
       file,
       sourceSystem: body.sourceSystem,
       tagKey: body.tagKey,

@@ -1,9 +1,114 @@
 ---
-description: Padroniza atualizações da importação de leads garantindo responsabilidades separadas e sem magic strings.
 alwaysApply: true
 ---
 
-# Regras para importação de leads v2
+# Regras de API (v2) + Migração v1→v2
+
+## Princípios (o que otimiza o sistema e reduz entropia)
+
+- **Contrato > implementação**: primeiro defina o shape de request/response (DTOs + OpenAPI), depois a lógica.
+- **SRP sempre**: Controller só adapta HTTP ↔ app. Use-cases orquestram. Domínio decide regras. Infra integra.
+- **Sem “magic strings”**: erros, enums, fontes (`sourceSystem/sourceRef`), eventos e tags devem estar em constantes/enums compartilhados (ex: `src/shared/*`), não espalhados em services.
+
+## Versionamento e rotas (padrão único, previsível)
+
+- **URI versioning**: `/v1/...` e `/v2/...` (não misturar header/param versioning no mesmo produto).
+- **Recursos no plural**: `/imports`, `/leads`, `/users`, etc.
+- **Evite RPC** (`/doThing`, `/import-one`) — se existir legado, aceite temporariamente, mas planeje convergir para recursos:
+  - OK por enquanto: `POST /v2/imports/one`
+  - Direção ideal: `POST /v2/imports` com `mode=one|batch` (ou payload com `mode`)
+- **Status code coerente**:
+  - `201` quando cria recurso síncrono
+  - `202` quando vira job (processamento não concluído no request)
+  - `409` para conflitos de idempotência/dedupe
+  - `422` para validação de domínio (quando faz sentido)
+
+## Migração incremental (sem big-bang)
+
+- **Strangler rule**: quando um endpoint migrar, a **regra de negócio passa a existir só na v2**.
+  - V1 (se mantida) vira **adapter** chamando o mesmo use-case (ou serviço app) da v2.
+  - Proibido duplicar lógica em v1 e v2 (drift garantido).
+- **Checklist por endpoint migrado**
+  - [ ] Rota v2 criada + testes
+  - [ ] Controller v1 delegando para o mesmo use-case (ou marcado deprecated)
+  - [ ] Logs/metrics consistentes (ver “Observabilidade”)
+  - [ ] Documentação curta de migração (o “como trocar v1→v2”)
+
+## Depreciação da v1 (quando já existe substituto em v2)
+
+- Quando uma rota v1 tiver “equivalente v2”:
+  - Retorne headers de depreciação **em toda resposta** da rota v1:
+    - `Deprecation: <date>` (data de depreciação)
+    - `Sunset: <http-date>` (data que vai desligar)
+    - `Link: <url-doc-migracao>; rel="deprecation"`
+- A v1 deve continuar funcionando até o `Sunset` (salvo incidentes), mas o contrato é: **clientes devem migrar**.
+
+### Status atual da migração (leads/imports)
+
+- Rotas v1 **já migradas para v2** e que devem estar **deprecated**:
+  - `POST /leads/import-one` → `POST /v2/leads/import-one`
+  - `GET /leads/search` → `GET /v2/leads/search`
+  - `GET /leads/:id/details` → `GET /v2/leads/:id/details`
+  - `POST /imports/spreadsheet` → `POST /v2/leads/import-spreadsheet`
+- Rotas v1 ainda **sem equivalente v2** (não deprecar por equivalência, por enquanto):
+  - `GET /leads/funnels/analytics`
+  - `GET /leads/list`
+  - `GET /leads/export`
+  - `POST /leads/jobs/normalize-lead-search-profile/run`
+
+## Jobs assíncronos + ETA (especialmente imports)
+
+Use job quando: payload grande, IO pesado, dedupe caro, fan-out de eventos, ou qualquer coisa que estoure latência saudável.
+
+### Padrão de endpoints
+
+- `POST /v2/imports/...` → retorna `202 Accepted` com `{ operationId, statusUrl }`
+- `GET /v2/import-operations/{operationId}` → status do job
+
+### Shape mínimo de `ImportOperation`
+
+- `id`
+- `status`: `QUEUED | RUNNING | SUCCEEDED | FAILED | CANCELED`
+- `progressPercent` (0–100)
+- `etaSeconds` **ou** `estimatedCompletionAt` (ISO)
+- `counts`: `{ processed, created, updated, skipped, failed }`
+- `errors[]`: erros relevantes (sem stack trace)
+- `createdAt`, `startedAt`, `finishedAt`
+- `correlationId` (pra rastrear logs)
+
+### Regras de ETA (pra não mentir pro usuário)
+
+- ETA é **heurística**, não promessa.
+- Só exponha ETA quando houver dados (ex: média móvel dos últimos N registros processados).
+- Se não for confiável, retorne `etaSeconds = null` e mantenha `progressPercent`.
+
+### Idempotência (para POST que pode repetir)
+
+- Aceite `Idempotency-Key` em imports e criações críticas.
+- Persistir chave + resultado por janela de tempo evita duplicar import em retry.
+
+## Erros padronizados (uma língua comum)
+
+- Responder erros em `application/problem+json` (Problem Details).
+- Campos mínimos: `type`, `title`, `status`, `detail`, `instance`
+- Adicionar `correlationId` no body **e** nos headers (ex: `x-correlation-id`)
+- Nunca expor stack trace em produção.
+
+## Observabilidade (debug sem arqueologia)
+
+- **Correlação obrigatória**: `x-correlation-id` (gerar se não vier) e propagar para downstream.
+- Logs estruturados (JSON), com no mínimo: `correlationId`, `tenantId` (derivado do token), `route`, `statusCode`, `durationMs`.
+- Métricas mínimas: taxa de erro por rota, latência p95/p99, contagem de jobs, taxa de falha de imports.
+
+## Como a IA deve ajudar (estilo de mudanças)
+
+- Sempre preferir **patch pequeno e focado** (só as partes que mudam).
+- Se sugerir refactor, manter SRP: extrair normalizador/mapper, não “engordar service”.
+- Antes de criar algo novo, verificar se já existe helper/enum/porta reutilizável.
+
+---
+
+# Regras específicas: importação de leads v2
 
 - Separe normalização/validação dos dados de entrada em um componente dedicado (ex: `LeadImportNormalizer`). O serviço de nível superior deve receber dados prontos para orquestrar persistência.
 - Evite strings mágicas espalhadas. Use constantes ou helpers para mensagens de erro, fontes (`sourceRef`, eventos, meta tags) e tipos de identificador (`LeadIdentifierTypeV2`). Centralize esses enums/constantes em pastas globais (ex: `src/shared/enums`) para que qualquer camada os reutilize sem depender diretamente do Prisma.
@@ -13,4 +118,4 @@ alwaysApply: true
   - anexe identificadores,
   - atualize campos essenciais,
   - invoque portas (referências, eventos, tags) com os dados normalizados.
-- Quando a IA sugerir alterações nesta área, lembre-se de validar o fluxo com testes (ex: `test/v2/leads-v2-import.spec.ts`) para confirmar conflitos e eventos.
+- Quando a IA sugerir alterações nesta área, validar o fluxo com testes (ex: `test/v2/leads-v2-import.spec.ts`) para confirmar conflitos, idempotência e eventos.

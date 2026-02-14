@@ -24,6 +24,11 @@ const normalizePhoneValue = (value?: string | null): string | null => {
 };
 
 const toIso = (value: Date): string => value.toISOString();
+const toNullableNumber = (value: { toNumber: () => number } | number | null): number | null => {
+  if (value === null) return null;
+  if (typeof value === 'number') return value;
+  return value.toNumber();
+};
 
 type PrismaV2Client = {
   leads: {
@@ -240,6 +245,66 @@ type PrismaV2Client = {
       }>
     >;
   };
+  formSubmissions: {
+    findMany: (args: {
+      where: { leadId: string };
+      include: {
+        formSchema: {
+          select: {
+            id: true;
+            name: true;
+            sourceSystem: true;
+          };
+        };
+        answers: {
+          include: {
+            question: {
+              select: {
+                id: true;
+                key: true;
+                label: true;
+                position: true;
+                dataType: true;
+              };
+            };
+          };
+          orderBy: { createdAt: 'asc' };
+        };
+      };
+      orderBy: { createdAt: 'desc' };
+    }) => Promise<
+      Array<{
+        id: string;
+        formSchemaId: string;
+        submittedAt: Date | null;
+        sourceRef: string | null;
+        dedupeKey: string | null;
+        createdAt: Date;
+        rawPayload: Record<string, unknown>;
+        formSchema: {
+          id: string;
+          name: string;
+          sourceSystem: LeadSourceSystemV2;
+        };
+        answers: Array<{
+          id: string;
+          questionId: string;
+          valueText: string | null;
+          valueNumber: { toNumber: () => number } | number | null;
+          valueBool: boolean | null;
+          valueJson: unknown | null;
+          createdAt: Date;
+          question: {
+            id: string;
+            key: string;
+            label: string;
+            position: number;
+            dataType: string;
+          };
+        }>;
+      }>
+    >;
+  };
 };
 
 @Injectable()
@@ -383,7 +448,7 @@ export class PrismaLeadsV2Repository implements LeadsV2RepositoryPort {
       throw new Error('Lead not found');
     }
 
-    const [identifiers, sources, leadTags, events] = await Promise.all([
+    const [identifiers, sources, leadTags, events, submissions] = await Promise.all([
       this.prisma.leadIdentifiers.findMany({
         where: { leadId },
         orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }],
@@ -409,6 +474,33 @@ export class PrismaLeadsV2Repository implements LeadsV2RepositoryPort {
       this.prisma.leadEvents.findMany({
         where: { leadId },
         orderBy: { occurredAt: 'desc' },
+      }),
+      this.prisma.formSubmissions.findMany({
+        where: { leadId },
+        include: {
+          formSchema: {
+            select: {
+              id: true,
+              name: true,
+              sourceSystem: true,
+            },
+          },
+          answers: {
+            include: {
+              question: {
+                select: {
+                  id: true,
+                  key: true,
+                  label: true,
+                  position: true,
+                  dataType: true,
+                },
+              },
+            },
+            orderBy: { createdAt: 'asc' },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
       }),
     ]);
 
@@ -456,7 +548,30 @@ export class PrismaLeadsV2Repository implements LeadsV2RepositoryPort {
         payload: event.payload,
       })),
       funnel_entries: [], // TODO: adicionar `lead_funnel_entries`, `funnels` e `funnel_stages` quando disponíveis no Prisma V2.
-      surveys: [], // TODO: popular com `form_submissions`, `form_answers` e `form_questions` assim que existirem.
+      surveys: submissions.map((submission) => ({
+        submission_id: submission.id,
+        form_schema_id: submission.formSchemaId,
+        form_name: submission.formSchema?.name ?? null,
+        form_source_system: submission.formSchema?.sourceSystem ?? null,
+        submitted_at: submission.submittedAt ? toIso(submission.submittedAt) : null,
+        source_ref: submission.sourceRef,
+        dedupe_key: submission.dedupeKey,
+        created_at: toIso(submission.createdAt),
+        raw_payload: submission.rawPayload,
+        answers: submission.answers.map((answer) => ({
+          answer_id: answer.id,
+          question_id: answer.questionId,
+          question_key: answer.question?.key ?? null,
+          question_label: answer.question?.label ?? null,
+          question_position: answer.question?.position ?? null,
+          question_data_type: answer.question?.dataType ?? null,
+          value_text: answer.valueText,
+          value_number: toNullableNumber(answer.valueNumber),
+          value_bool: answer.valueBool,
+          value_json: answer.valueJson,
+          created_at: toIso(answer.createdAt),
+        })),
+      })),
     };
 
     return detail;
