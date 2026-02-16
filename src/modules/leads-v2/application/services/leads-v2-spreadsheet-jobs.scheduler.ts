@@ -3,6 +3,7 @@ import { Cron } from '@nestjs/schedule';
 import { LeadsV2SpreadsheetJobsService } from '@/modules/leads-v2/application/services/leads-v2-spreadsheet-jobs.service';
 
 const ENABLE_V2_SPREADSHEET_JOB = 'ENABLE_V2_SPREADSHEET_JOB';
+const ENABLE_V2_SPREADSHEET_CLEANUP = 'ENABLE_V2_SPREADSHEET_CLEANUP';
 
 @Injectable()
 export class LeadsV2SpreadsheetJobsScheduler implements OnModuleInit {
@@ -45,7 +46,27 @@ export class LeadsV2SpreadsheetJobsScheduler implements OnModuleInit {
     }
   }
 
+  @Cron('0 4 * * *')
+  async runDailyCleanup(): Promise<void> {
+    if (!this.isCleanupEnabled()) {
+      return;
+    }
+    try {
+      const result = await this.jobsService.cleanupCompletedFiles();
+      if (result.deleted > 0) {
+        this.logger.log(`Limpeza de imports de leads: ${result.deleted} arquivo(s) removido(s).`);
+      }
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      this.logger.error(`Falha na limpeza diária de imports de leads: ${reason}`);
+    }
+  }
+
   private isSchedulerEnabled(): boolean {
     return process.env[ENABLE_V2_SPREADSHEET_JOB] === 'true';
+  }
+
+  private isCleanupEnabled(): boolean {
+    return process.env[ENABLE_V2_SPREADSHEET_CLEANUP] === 'true';
   }
 }

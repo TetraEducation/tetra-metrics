@@ -14,6 +14,9 @@ RUN pnpm install --frozen-lockfile
 # copia o resto do código
 COPY . .
 
+# gera client do prisma v2 durante o build
+RUN pnpm prisma:generate
+
 # build do NestJS
 RUN pnpm build
 
@@ -22,4 +25,4 @@ ENV PORT=3333
 
 EXPOSE 3333
 
-CMD ["node", "dist/main.js"]
+CMD ["sh", "-c", "pnpm prisma:migrate:deploy:v2 && node dist/main.js"]

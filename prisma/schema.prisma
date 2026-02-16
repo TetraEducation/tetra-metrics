@@ -299,7 +299,6 @@ model JobRuns {
   createdAt        DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt        DateTime         @default(now()) @map("updated_at") @db.Timestamptz(6)
 
-  @@unique([fileHash], map: "uq_job_runs_file_hash")
   @@index([status], map: "idx_job_runs_status")
   @@index([createdAt], map: "idx_job_runs_created_at")
   @@index([jobName, status], map: "idx_job_runs_job_name_status")

@@ -9,13 +9,13 @@ import {
   Query,
   Res,
   StreamableFile,
-  UploadedFile,
+  UploadedFiles,
   UseInterceptors,
   UsePipes,
   ValidationPipe,
 } from '@nestjs/common';
 import { createReadStream } from 'node:fs';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { FilesInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import type { Response } from 'express';
 import {
@@ -125,8 +125,11 @@ export class LeadsV2Controller {
       type: 'object',
       properties: {
         file: {
-          type: 'string',
-          format: 'binary',
+          type: 'array',
+          items: {
+            type: 'string',
+            format: 'binary',
+          },
         },
         sourceSystem: {
           type: 'string',
@@ -146,7 +149,7 @@ export class LeadsV2Controller {
   })
   @HttpCode(202)
   @UseInterceptors(
-    FileInterceptor('file', {
+    FilesInterceptor('file', 20, {
       storage: memoryStorage(),
       limits: {
         fileSize: 50 * 1024 * 1024,
@@ -154,27 +157,50 @@ export class LeadsV2Controller {
     }),
   )
   async importSpreadsheet(
-    @UploadedFile() file: Express.Multer.File | undefined,
+    @UploadedFiles() files: Express.Multer.File[] | undefined,
     @Body() body: ImportSpreadsheetV2Dto,
   ): Promise<SpreadsheetImportQueuedResponseDto> {
-    if (!file) {
-      throw new BadRequestException('Arquivo ausente. Envie no campo "file".');
+    if (!files || files.length === 0) {
+      throw new BadRequestException('Arquivo ausente. Envie ao menos um arquivo no campo "file".');
     }
 
-    if (!file.buffer || file.buffer.length === 0) {
-      throw new BadRequestException('Arquivo está vazio ou inválido.');
+    const jobs: SpreadsheetImportQueuedResponseDto['jobs'] = [];
+    for (const file of files) {
+      if (!file.buffer || file.buffer.length === 0) {
+        jobs.push({
+          fileName: file.originalname || 'arquivo_sem_nome',
+          error: 'Arquivo está vazio ou inválido.',
+        });
+        continue;
+      }
+
+      try {
+        const queued = await this.spreadsheetJobs.queueSpreadsheet({
+          file,
+          sourceSystem: body.sourceSystem,
+          tagKey: body.tagKey,
+        });
+        jobs.push({
+          fileName: file.originalname,
+          jobRunId: queued.jobRunId,
+          status: queued.status,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        jobs.push({
+          fileName: file.originalname,
+          error: message,
+        });
+      }
     }
 
-    const queued = await this.spreadsheetJobs.queueSpreadsheet({
-      file,
-      sourceSystem: body.sourceSystem,
-      tagKey: body.tagKey,
-    });
+    if (!jobs.some((job) => Boolean(job.jobRunId))) {
+      throw new BadRequestException('Nenhum arquivo foi aceito para enfileiramento.');
+    }
 
     return {
-      ok: true,
-      jobRunId: queued.jobRunId,
-      status: queued.status,
+      ok: jobs.every((job) => Boolean(job.jobRunId)),
+      jobs,
     };
   }
 
@@ -190,8 +216,11 @@ export class LeadsV2Controller {
       type: 'object',
       properties: {
         file: {
-          type: 'string',
-          format: 'binary',
+          type: 'array',
+          items: {
+            type: 'string',
+            format: 'binary',
+          },
         },
         sourceSystem: {
           type: 'string',
@@ -211,7 +240,7 @@ export class LeadsV2Controller {
   })
   @HttpCode(202)
   @UseInterceptors(
-    FileInterceptor('file', {
+    FilesInterceptor('file', 20, {
       storage: memoryStorage(),
       limits: {
         fileSize: 50 * 1024 * 1024,
@@ -219,27 +248,50 @@ export class LeadsV2Controller {
     }),
   )
   async importSurveySpreadsheet(
-    @UploadedFile() file: Express.Multer.File | undefined,
+    @UploadedFiles() files: Express.Multer.File[] | undefined,
     @Body() body: ImportSurveySpreadsheetV2Dto,
   ): Promise<SpreadsheetImportQueuedResponseDto> {
-    if (!file) {
-      throw new BadRequestException('Arquivo ausente. Envie no campo "file".');
+    if (!files || files.length === 0) {
+      throw new BadRequestException('Arquivo ausente. Envie ao menos um arquivo no campo "file".');
     }
 
-    if (!file.buffer || file.buffer.length === 0) {
-      throw new BadRequestException('Arquivo está vazio ou inválido.');
+    const jobs: SpreadsheetImportQueuedResponseDto['jobs'] = [];
+    for (const file of files) {
+      if (!file.buffer || file.buffer.length === 0) {
+        jobs.push({
+          fileName: file.originalname || 'arquivo_sem_nome',
+          error: 'Arquivo está vazio ou inválido.',
+        });
+        continue;
+      }
+
+      try {
+        const queued = await this.surveySpreadsheetJobs.queueSpreadsheet({
+          file,
+          sourceSystem: body.sourceSystem,
+          tagKey: body.tagKey,
+        });
+        jobs.push({
+          fileName: file.originalname,
+          jobRunId: queued.jobRunId,
+          status: queued.status,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        jobs.push({
+          fileName: file.originalname,
+          error: message,
+        });
+      }
     }
 
-    const queued = await this.surveySpreadsheetJobs.queueSpreadsheet({
-      file,
-      sourceSystem: body.sourceSystem,
-      tagKey: body.tagKey,
-    });
+    if (!jobs.some((job) => Boolean(job.jobRunId))) {
+      throw new BadRequestException('Nenhum arquivo foi aceito para enfileiramento.');
+    }
 
     return {
-      ok: true,
-      jobRunId: queued.jobRunId,
-      status: queued.status,
+      ok: jobs.every((job) => Boolean(job.jobRunId)),
+      jobs,
     };
   }
 

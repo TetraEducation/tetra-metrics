@@ -49,6 +49,7 @@ export type UpdateJobRunProgressInput = {
 
 export interface LeadsV2JobRunsRepositoryPort {
   createPending(input: CreateSpreadsheetJobRunInput): Promise<JobRunV2>;
+  hasBlockingRunByHash(params: { jobName: string; fileHash: string }): Promise<boolean>;
   claimNextRunnable(jobName: string, maxRetries: number): Promise<JobRunV2 | null>;
   findById(id: string): Promise<JobRunV2 | null>;
   hasRunning(jobName: string): Promise<boolean>;

@@ -1,6 +1,6 @@
 import type { ColumnInferencePort } from '@/modules/imports/application/ports/column-inference.port';
 import type { SpreadsheetParserPort } from '@/modules/imports/application/ports/spreadsheet-parser.port';
-import { mkdtemp, writeFile } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, utimes, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import type {
@@ -12,6 +12,7 @@ import { LeadsV2SpreadsheetJobsService } from '@/modules/leads-v2/application/se
 
 const buildJobRunsMock = (): LeadsV2JobRunsRepositoryPort => ({
   createPending: jest.fn(),
+  hasBlockingRunByHash: jest.fn(),
   claimNextRunnable: jest.fn(),
   findById: jest.fn(),
   hasRunning: jest.fn(),
@@ -166,5 +167,90 @@ describe('LeadsV2SpreadsheetJobsService', () => {
         processedOk: 3,
       }),
     );
+  });
+
+  it('bloqueia novo upload quando hash possui run bloqueante', async () => {
+    const jobRuns = buildJobRunsMock();
+    (jobRuns.hasBlockingRunByHash as jest.Mock).mockResolvedValue(true);
+    const service = new LeadsV2SpreadsheetJobsService(
+      jobRuns,
+      {} as SpreadsheetParserPort,
+      {} as ColumnInferencePort,
+      buildLeadsImportMock() as unknown as LeadsV2ImportService,
+    );
+
+    await expect(
+      service.queueSpreadsheet({
+        file: {
+          originalname: 'leads.csv',
+          mimetype: 'text/csv',
+          buffer: Buffer.from('email\nana@example.com\n', 'utf-8'),
+          size: 22,
+        } as Express.Multer.File,
+      }),
+    ).rejects.toThrow('Este arquivo já foi registrado anteriormente para processamento.');
+    expect(jobRuns.createPending).not.toHaveBeenCalled();
+  });
+
+  it('permite novo upload quando não há run bloqueante', async () => {
+    const jobRuns = buildJobRunsMock();
+    (jobRuns.hasBlockingRunByHash as jest.Mock).mockResolvedValue(false);
+    (jobRuns.createPending as jest.Mock).mockResolvedValue({
+      id: 'job-1',
+      status: 'PENDING',
+    });
+    const service = new LeadsV2SpreadsheetJobsService(
+      jobRuns,
+      {} as SpreadsheetParserPort,
+      {} as ColumnInferencePort,
+      buildLeadsImportMock() as unknown as LeadsV2ImportService,
+    );
+    const workDir = await mkdtemp(join(tmpdir(), 'v2-jobs-queue-'));
+    const cwdSpy = jest.spyOn(process, 'cwd').mockReturnValue(workDir);
+
+    const queued = await service.queueSpreadsheet({
+      file: {
+        originalname: 'leads.csv',
+        mimetype: 'text/csv',
+        buffer: Buffer.from('email\nana@example.com\n', 'utf-8'),
+        size: 22,
+      } as Express.Multer.File,
+    });
+
+    expect(queued).toEqual({
+      jobRunId: 'job-1',
+      status: 'PENDING',
+    });
+    expect(jobRuns.createPending).toHaveBeenCalledTimes(1);
+    cwdSpy.mockRestore();
+  });
+
+  it('limpa arquivo físico de run COMPLETED mantendo registro no banco', async () => {
+    const jobRuns = buildJobRunsMock();
+    (jobRuns.findById as jest.Mock).mockResolvedValue({
+      id: 'run_cleanup',
+      jobName: 'leads_v2_spreadsheet_import',
+      status: 'COMPLETED',
+    });
+    const service = new LeadsV2SpreadsheetJobsService(
+      jobRuns,
+      {} as SpreadsheetParserPort,
+      {} as ColumnInferencePort,
+      buildLeadsImportMock() as unknown as LeadsV2ImportService,
+    );
+    const baseDir = await mkdtemp(join(tmpdir(), 'v2-jobs-cleanup-'));
+    const doneDir = join(baseDir, 'imports', 'v2', 'done');
+    await mkdir(doneDir, { recursive: true });
+    const donePath = join(doneDir, 'run_cleanup_leads.csv');
+    await writeFile(donePath, 'email\nana@example.com\n', 'utf-8');
+    const expiredDate = new Date(Date.now() - 4 * 24 * 60 * 60 * 1000);
+    await utimes(donePath, expiredDate, expiredDate);
+    const cwdSpy = jest.spyOn(process, 'cwd').mockReturnValue(baseDir);
+
+    const result = await service.cleanupCompletedFiles(3);
+
+    expect(result.deleted).toBe(1);
+    await expect(access(donePath)).rejects.toBeTruthy();
+    cwdSpy.mockRestore();
   });
 });

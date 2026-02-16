@@ -7,6 +7,7 @@ import { LeadsV2ExportService } from '@/modules/leads-v2/application/services/le
 
 const buildJobRunsMock = (): LeadsV2JobRunsRepositoryPort => ({
   createPending: jest.fn(),
+  hasBlockingRunByHash: jest.fn(),
   claimNextRunnable: jest.fn(),
   findById: jest.fn(),
   hasRunning: jest.fn(),

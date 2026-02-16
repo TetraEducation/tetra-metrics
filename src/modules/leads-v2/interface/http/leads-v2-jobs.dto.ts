@@ -47,11 +47,25 @@ export class SpreadsheetImportQueuedResponseDto {
   @ApiProperty({ example: true })
   ok!: boolean;
 
-  @ApiProperty({ example: 'cmf1d1x1y0000abc123def456' })
-  jobRunId!: string;
-
-  @ApiProperty({ example: 'PENDING', enum: JOB_RUN_STATUSES })
-  status!: JobRunStatusV2;
+  @ApiProperty({
+    example: [
+      {
+        fileName: 'leads_janeiro.xlsx',
+        jobRunId: 'cmf1d1x1y0000abc123def456',
+        status: 'PENDING',
+      },
+      {
+        fileName: 'leads_fevereiro.xlsx',
+        error: 'Este arquivo já foi registrado anteriormente para processamento.',
+      },
+    ],
+  })
+  jobs!: Array<{
+    fileName: string;
+    jobRunId?: string;
+    status?: JobRunStatusV2;
+    error?: string;
+  }>;
 }
 
 export class LeadsV2ListQueryDto extends LeadsListingSearchDto {}

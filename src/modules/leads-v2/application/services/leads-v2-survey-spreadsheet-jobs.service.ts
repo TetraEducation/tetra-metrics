@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { access, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { access, mkdir, readFile, readdir, rename, stat, unlink, writeFile } from 'node:fs/promises';
 import { basename, extname, join, resolve, sep } from 'node:path';
 import { BadRequestException, Inject, Injectable, Logger } from '@nestjs/common';
 import { fileBaseName, normalizeEmail, normalizeText } from '@/modules/imports/application/utils/normalize';
@@ -27,6 +27,7 @@ const CHUNK_SIZE = 100;
 const MAX_ERROR_SAMPLES = 30;
 const MAX_AUTO_RETRIES = 3;
 const STALE_RUNNING_MINUTES = 1;
+const COMPLETED_FILE_RETENTION_DAYS = 3;
 
 type ProcessedStats = {
   processedRows: number;
@@ -70,6 +71,15 @@ export class LeadsV2SurveySpreadsheetJobsService {
     const sourceSystem = this.normalizeSourceSystem(params.sourceSystem);
     const tagKey = this.resolveTagKey(params.tagKey, params.file.originalname);
     const fileHash = this.hashBuffer(params.file.buffer);
+    const hasBlockingRun = await this.jobRuns.hasBlockingRunByHash({
+      jobName: JOB_NAME,
+      fileHash,
+    });
+    if (hasBlockingRun) {
+      throw new BadRequestException(
+        'Este arquivo já foi registrado anteriormente para processamento.',
+      );
+    }
     const filePath = await this.savePendingFile(params.file.originalname, fileHash, params.file.buffer);
 
     try {
@@ -204,6 +214,43 @@ export class LeadsV2SurveySpreadsheetJobsService {
 
       this.logger.error(`Job ${claimed.id} falhou: ${reason}`);
     }
+  }
+
+  async cleanupCompletedFiles(retentionDays: number = COMPLETED_FILE_RETENTION_DAYS): Promise<{ deleted: number }> {
+    const doneDir = join(this.getBaseImportsV2Path(), 'done');
+    await this.ensureDir(doneDir);
+
+    const now = Date.now();
+    const retentionMs = retentionDays * 24 * 60 * 60 * 1000;
+    const entries = await readdir(doneDir, { withFileTypes: true });
+    let deleted = 0;
+
+    for (const entry of entries) {
+      if (!entry.isFile()) continue;
+
+      const fullPath = join(doneDir, entry.name);
+      const runId = this.extractRunIdFromStoredFileName(entry.name);
+      if (!runId) continue;
+
+      try {
+        const fileStats = await stat(fullPath);
+        if (now - fileStats.mtimeMs < retentionMs) {
+          continue;
+        }
+
+        const run = await this.jobRuns.findById(runId);
+        if (!run || run.jobName !== JOB_NAME || run.status !== 'COMPLETED') {
+          continue;
+        }
+
+        await this.deleteFileIfExists(fullPath);
+        deleted++;
+      } catch {
+        // noop
+      }
+    }
+
+    return { deleted };
   }
 
   private async processRows(params: {
@@ -638,6 +685,19 @@ export class LeadsV2SurveySpreadsheetJobsService {
     } catch {
       // noop
     }
+  }
+
+  private extractRunIdFromStoredFileName(fileName: string): string | null {
+    const separatorIndex = fileName.indexOf('_');
+    if (separatorIndex <= 0) {
+      return null;
+    }
+    return fileName.slice(0, separatorIndex);
+  }
+
+  private async deleteFileIfExists(path: string): Promise<void> {
+    if (!(await this.fileExists(path))) return;
+    await unlink(path);
   }
 
   private isUniqueConstraintError(error: unknown): boolean {

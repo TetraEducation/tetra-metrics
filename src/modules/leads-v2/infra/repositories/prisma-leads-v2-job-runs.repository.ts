@@ -25,6 +25,7 @@ type PrismaV2Client = {
     findFirst: (args: {
       where: {
         jobName?: string;
+        fileHash?: string;
         status?: JobRunStatusV2 | { in: JobRunStatusV2[] };
         retryCount?: { lt: number };
         updatedAt?: { lt: Date };
@@ -116,6 +117,18 @@ export class PrismaLeadsV2JobRunsRepository implements LeadsV2JobRunsRepositoryP
       },
     });
     return this.mapJobRun(row);
+  }
+
+  async hasBlockingRunByHash(params: { jobName: string; fileHash: string }): Promise<boolean> {
+    const row = await this.prisma.jobRuns.findFirst({
+      where: {
+        jobName: params.jobName,
+        fileHash: params.fileHash,
+        status: { in: ['PENDING', 'RUNNING', 'COMPLETED'] },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    return Boolean(row);
   }
 
   async claimNextRunnable(jobName: string, maxRetries: number): Promise<JobRunV2 | null> {

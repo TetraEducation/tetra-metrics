@@ -1,5 +1,8 @@
 import type { ColumnInferencePort } from '@/modules/imports/application/ports/column-inference.port';
 import type { SpreadsheetParserPort } from '@/modules/imports/application/ports/spreadsheet-parser.port';
+import { access, mkdir, mkdtemp, utimes, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { SurveyInferenceService } from '@/modules/imports/application/services/survey-inference.service';
 import type {
   JobRunV2,
@@ -11,6 +14,7 @@ import { LeadsV2SurveySpreadsheetJobsService } from '@/modules/leads-v2/applicat
 
 const buildJobRunsMock = (): LeadsV2JobRunsRepositoryPort => ({
   createPending: jest.fn(),
+  hasBlockingRunByHash: jest.fn(),
   claimNextRunnable: jest.fn(),
   findById: jest.fn(),
   hasRunning: jest.fn(),
@@ -189,5 +193,61 @@ describe('LeadsV2SurveySpreadsheetJobsService', () => {
         questionId: 'question-3',
       },
     ]);
+  });
+
+  it('bloqueia novo upload quando hash possui run bloqueante de survey', async () => {
+    const jobRuns = buildJobRunsMock();
+    (jobRuns.hasBlockingRunByHash as jest.Mock).mockResolvedValue(true);
+    const service = new LeadsV2SurveySpreadsheetJobsService(
+      jobRuns,
+      {} as SpreadsheetParserPort,
+      {} as ColumnInferencePort,
+      buildSurveyInferenceMock(),
+      buildSurveyIngestionMock(),
+      buildLeadsImportMock() as unknown as LeadsV2ImportService,
+    );
+
+    await expect(
+      service.queueSpreadsheet({
+        file: {
+          originalname: 'survey.csv',
+          mimetype: 'text/csv',
+          buffer: Buffer.from('email,Pergunta 1\nana@example.com,ok\n', 'utf-8'),
+          size: 40,
+        } as Express.Multer.File,
+      }),
+    ).rejects.toThrow('Este arquivo já foi registrado anteriormente para processamento.');
+    expect(jobRuns.createPending).not.toHaveBeenCalled();
+  });
+
+  it('limpa arquivo físico de survey COMPLETED mantendo registro no banco', async () => {
+    const jobRuns = buildJobRunsMock();
+    (jobRuns.findById as jest.Mock).mockResolvedValue({
+      id: 'run_cleanup',
+      jobName: 'leads_v2_survey_spreadsheet_import',
+      status: 'COMPLETED',
+    });
+    const service = new LeadsV2SurveySpreadsheetJobsService(
+      jobRuns,
+      {} as SpreadsheetParserPort,
+      {} as ColumnInferencePort,
+      buildSurveyInferenceMock(),
+      buildSurveyIngestionMock(),
+      buildLeadsImportMock() as unknown as LeadsV2ImportService,
+    );
+    const baseDir = await mkdtemp(join(tmpdir(), 'v2-survey-jobs-cleanup-'));
+    const doneDir = join(baseDir, 'imports', 'v2', 'done');
+    await mkdir(doneDir, { recursive: true });
+    const donePath = join(doneDir, 'run_cleanup_survey.csv');
+    await writeFile(donePath, 'email,Pergunta 1\nana@example.com,ok\n', 'utf-8');
+    const expiredDate = new Date(Date.now() - 4 * 24 * 60 * 60 * 1000);
+    await utimes(donePath, expiredDate, expiredDate);
+    const cwdSpy = jest.spyOn(process, 'cwd').mockReturnValue(baseDir);
+
+    const result = await service.cleanupCompletedFiles(3);
+
+    expect(result.deleted).toBe(1);
+    await expect(access(donePath)).rejects.toBeTruthy();
+    cwdSpy.mockRestore();
   });
 });
