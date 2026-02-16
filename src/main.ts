@@ -3,6 +3,8 @@ import type { NestApplicationOptions } from '@nestjs/common';
 import { apiReference } from '@scalar/nestjs-api-reference';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import type { Request, Response } from 'express';
+import { ensureEnv } from '@/infra/env/ensure-env';
+import { SUPABASE_ENV_VARS, isSupabaseEnabled } from '@/infra/flags/supabase.flag';
 import { ClintModule } from '@/modules/clint/clint.module';
 import { ImportsModule } from '@/modules/imports/imports.module';
 import { LeadsModule } from '@/modules/leads/leads.module';
@@ -11,7 +13,19 @@ import { MetricsModule } from '@/modules/metrics/metrics.module';
 import { AppModule } from './app.module';
 import { V1DeprecationInterceptor } from '@/infra/http/interceptors/v1-deprecation.interceptor';
 
+const BASE_ENV_VARS = ['DATABASE_URL_V2'];
+const CLINT_ENV_VARS = ['CLINT_API_TOKEN'];
+const ACTIVE_CAMPAIGN_ENV_VARS = ['ACTIVECAMPAIGN_API_TOKEN', 'ACTIVECAMPAIGN_API_BASE_URL'];
+
 async function bootstrap() {
+  const supabaseEnabled = isSupabaseEnabled();
+  const requiredEnvVars = [...BASE_ENV_VARS];
+  if (supabaseEnabled) {
+    requiredEnvVars.push(...SUPABASE_ENV_VARS, ...CLINT_ENV_VARS, ...ACTIVE_CAMPAIGN_ENV_VARS);
+  }
+
+  ensureEnv(requiredEnvVars);
+
   const isProduction = process.env.NODE_ENV === 'production';
   const loggerConfig: NestApplicationOptions = isProduction
     ? { logger: ['warn', 'error'] }
