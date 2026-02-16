@@ -79,3 +79,21 @@ scripts/
 **/__tests__/
 **/__mocks__/
 
+node_modules
+dist
+coverage
+.git
+.gitignore
+
+dumps
+dumps_chunks
+folders
+supabase
+
+*.log
+*.tmp
+.tmp
+.cache
+
+.env
+.env.*
