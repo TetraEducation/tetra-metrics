@@ -70,6 +70,32 @@ $ mau deploy
 
 With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
 
+### Deploy com Docker (produção)
+
+Antes de subir a API em produção, valide este checklist para evitar erro de boot por artefato ausente (`/app/dist/main.js`):
+
+```bash
+# 1) Renderizar config final do compose (com env resolvido)
+docker compose --env-file ./.env config
+
+# 2) Confirmar que o serviço da API NAO monta volume em /app
+# (volumes em /app podem sobrescrever o build da imagem)
+
+# 3) Build e subida
+docker compose --env-file ./.env up -d --build
+
+# 4) Verificar artefato compilado dentro do container
+docker exec -it tetra-metrics-api sh -lc "ls -la /app/dist && test -f /app/dist/main.js"
+
+# 5) Smoke test: migrations + start sem loop de restart
+docker logs -f tetra-metrics-api
+```
+
+Esperado no log:
+- `prisma migrate deploy` executa sem erro.
+- O processo sobe com `pnpm start:prod`.
+- Nao aparece `Cannot find module '/app/dist/main.js'`.
+
 ## Resources
 
 Check out a few resources that may come in handy when working with NestJS:

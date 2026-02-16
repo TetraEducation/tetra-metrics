@@ -25,4 +25,4 @@ ENV PORT=3333
 
 EXPOSE 3333
 
-CMD ["sh", "-c", "pnpm prisma:migrate:deploy:v2 && node dist/main.js"]
+CMD ["sh", "-c", "pnpm prisma:migrate:deploy:v2 && if [ ! -f dist/main.js ]; then echo 'ERRO: artefato dist/main.js ausente. Verifique build/volumes no compose.'; exit 1; fi && pnpm start:prod"]
