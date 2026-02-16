@@ -81,8 +81,12 @@ docker compose --env-file ./.env config
 # 2) Confirmar que o serviço da API NAO monta volume em /app
 # (volumes em /app podem sobrescrever o build da imagem)
 
-# 3) Build e subida
+# 3) Build e subida (forca refresh da imagem base)
+docker compose --env-file ./.env build --pull api
 docker compose --env-file ./.env up -d --build
+
+# Se package.json/pnpm-lock.yaml mudou e houver suspeita de cache antigo:
+docker compose --env-file ./.env build --no-cache api
 
 # 4) Verificar artefato compilado dentro do container
 docker exec -it tetra-metrics-api sh -lc "ls -la /app/dist && test -f /app/dist/main.js"

@@ -38,6 +38,9 @@ importers:
       '@prisma/client':
         specifier: ^7.4.0
         version: 7.4.0(prisma@7.4.0(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(typescript@5.9.3))(typescript@5.9.3)
+      '@prisma/client-runtime-utils':
+        specifier: ^7.4.0
+        version: 7.4.0
       '@scalar/nestjs-api-reference':
         specifier: ^1.0.23
         version: 1.0.23

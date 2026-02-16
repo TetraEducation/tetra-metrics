@@ -65,6 +65,7 @@
     "@nestjs/swagger": "^11.2.6",
     "@prisma/adapter-pg": "^7.4.0",
     "@prisma/client": "^7.4.0",
+    "@prisma/client-runtime-utils": "^7.4.0",
     "@scalar/nestjs-api-reference": "^1.0.23",
     "@supabase/supabase-js": "^2.85.0",
     "axios": "^1.13.2",
