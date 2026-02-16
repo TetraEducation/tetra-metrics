@@ -10,6 +10,7 @@ import { ClintModule } from '@/modules/clint/clint.module';
 import { ActiveCampaignModule } from '@/modules/activecampaign/activecampaign.module';
 import { ImportsModule } from '@/modules/imports/imports.module';
 import { LeadsV2Module } from '@/modules/leads-v2/leads-v2.module';
+import { HealthController } from '@/infra/http/health.controller';
 
 const baseImports = [
   ConfigModule.forRoot({ isGlobal: true }),
@@ -31,7 +32,7 @@ const appImports = [...baseImports, ...(isSupabaseEnabled() ? supabaseImports : 
 
 @Module({
   imports: appImports,
-  controllers: [],
+  controllers: [HealthController],
   providers: [],
 })
 export class AppModule {}

@@ -72,7 +72,7 @@ With Mau, you can deploy your application in just a few clicks, allowing you to 
 
 ### Deploy com Docker (produção)
 
-Antes de subir a API em produção, valide este checklist para evitar erro de boot por artefato ausente (`/app/dist/main.js`):
+Antes de subir a API em produção, valide este checklist para evitar erro de boot por artefato ausente e facilitar diagnóstico local:
 
 ```bash
 # 1) Renderizar config final do compose (com env resolvido)
@@ -89,16 +89,22 @@ docker compose --env-file ./.env up -d --build
 docker compose --env-file ./.env build --no-cache api
 
 # 4) Verificar artefato compilado dentro do container
-docker exec -it tetra-metrics-api sh -lc "ls -la /app/dist && test -f /app/dist/main.js"
+docker exec -it tetra-metrics-api sh -lc "ls -la /app/dist /app/dist/src && test -f /app/dist/src/main.js"
 
-# 5) Smoke test: migrations + start sem loop de restart
+# 5) Validar endpoint local de saúde (bind em 127.0.0.1:3333 no compose-prod)
+curl -fsS http://127.0.0.1:3333/healthz
+
+# 6) Smoke test: migrations + start sem loop de restart
 docker logs -f tetra-metrics-api
 ```
 
 Esperado no log:
 - `prisma migrate deploy` executa sem erro.
-- O processo sobe com `pnpm start:prod`.
-- Nao aparece `Cannot find module '/app/dist/main.js'`.
+- Aparece `API pronta em http://0.0.0.0:3333`.
+- `curl http://127.0.0.1:3333/healthz` retorna `{"status":"ok"}`.
+
+Depois que o Traefik estiver configurado e validado, remova o bind local de `docker-compose-prod.yaml`:
+- Remover `ports: - "127.0.0.1:3333:3333"` do serviço `api`.
 
 ## Resources
 

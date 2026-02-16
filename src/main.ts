@@ -1,5 +1,6 @@
 import { NestFactory } from '@nestjs/core';
 import type { NestApplicationOptions } from '@nestjs/common';
+import { Logger } from '@nestjs/common';
 import { apiReference } from '@scalar/nestjs-api-reference';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import type { Request, Response } from 'express';
@@ -28,7 +29,7 @@ async function bootstrap() {
 
   const isProduction = process.env.NODE_ENV === 'production';
   const loggerConfig: NestApplicationOptions = isProduction
-    ? { logger: ['warn', 'error'] }
+    ? { logger: ['log', 'warn', 'error'] }
     : {};
   const app = await NestFactory.create(AppModule, loggerConfig);
 
@@ -88,6 +89,9 @@ async function bootstrap() {
 
   app.useGlobalInterceptors(new V1DeprecationInterceptor());
 
-  await app.listen(process.env.PORT ?? 3333, '0.0.0.0');
+  const host = '0.0.0.0';
+  const port = Number(process.env.PORT ?? 3333);
+  await app.listen(port, host);
+  Logger.log(`API pronta em http://${host}:${port}`, 'Bootstrap');
 }
 bootstrap();

@@ -3,6 +3,8 @@ services:
     build: .
     container_name: tetra-metrics-api
     restart: unless-stopped
+    ports:
+      - "127.0.0.1:3333:3333"
     environment:
       PORT: "3333"
     env_file:
