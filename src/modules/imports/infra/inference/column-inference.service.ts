@@ -38,6 +38,21 @@ export class ColumnInferenceService implements ColumnInferencePort {
     'candidate',
   ];
 
+  private readonly companyPatterns = [
+    'empresa',
+    'company',
+    'organização',
+    'organization',
+    'instituição',
+    'instituicao',
+    'trabalha',
+    'trabalho',
+    'work',
+    'job',
+    'empregador',
+    'employer',
+  ];
+
   private readonly ignoredNamePatterns = [
     'lista de nomes',
     'lista nomes',
@@ -527,22 +542,7 @@ export class ColumnInferenceService implements ColumnInferencePort {
         continue;
       }
 
-      const isAboutCompany =
-        normalized.includes('empresa') ||
-        normalized.includes('company') ||
-        normalized.includes('organização') ||
-        normalized.includes('organization') ||
-        normalized.includes('trabalha') ||
-        normalized.includes('trabalho') ||
-        normalized.includes('work') ||
-        normalized.includes('job') ||
-        normalized.includes('empregador') ||
-        normalized.includes('employer') ||
-        normalized.includes('instituição') ||
-        normalized.includes('instituicao') ||
-        normalized.includes('institution');
-
-      if (isAboutCompany) {
+      if (this.isCompanyColumn(normalized)) {
         continue;
       }
 
@@ -647,22 +647,32 @@ export class ColumnInferenceService implements ColumnInferencePort {
       .trim();
   }
 
+  private isCompanyColumn(normalizedHeader: string): boolean {
+    return this.companyPatterns.some((pattern) => normalizedHeader.includes(pattern));
+  }
+
   private findBestFirstNameColumn(
     normalizedHeaders: string[],
     originalHeaders: string[],
   ): string | null {
     for (const pattern of this.firstNamePatterns) {
-      const exactIndex = normalizedHeaders.findIndex((header) => header === pattern);
+      const exactIndex = normalizedHeaders.findIndex(
+        (header) => header === pattern && !this.isCompanyColumn(header),
+      );
       if (exactIndex !== -1) {
         return originalHeaders[exactIndex];
       }
 
-      const prefixIndex = normalizedHeaders.findIndex((header) => header.startsWith(pattern + ' '));
+      const prefixIndex = normalizedHeaders.findIndex(
+        (header) => header.startsWith(pattern + ' ') && !this.isCompanyColumn(header),
+      );
       if (prefixIndex !== -1) {
         return originalHeaders[prefixIndex];
       }
 
-      const containsIndex = normalizedHeaders.findIndex((header) => header.includes(pattern));
+      const containsIndex = normalizedHeaders.findIndex(
+        (header) => header.includes(pattern) && !this.isCompanyColumn(header),
+      );
       if (containsIndex !== -1) {
         return originalHeaders[containsIndex];
       }
@@ -676,17 +686,23 @@ export class ColumnInferenceService implements ColumnInferencePort {
     originalHeaders: string[],
   ): string | null {
     for (const pattern of this.surnamePatterns) {
-      const exactIndex = normalizedHeaders.findIndex((header) => header === pattern);
+      const exactIndex = normalizedHeaders.findIndex(
+        (header) => header === pattern && !this.isCompanyColumn(header),
+      );
       if (exactIndex !== -1) {
         return originalHeaders[exactIndex];
       }
 
-      const prefixIndex = normalizedHeaders.findIndex((header) => header.startsWith(pattern + ' '));
+      const prefixIndex = normalizedHeaders.findIndex(
+        (header) => header.startsWith(pattern + ' ') && !this.isCompanyColumn(header),
+      );
       if (prefixIndex !== -1) {
         return originalHeaders[prefixIndex];
       }
 
-      const containsIndex = normalizedHeaders.findIndex((header) => header.includes(pattern));
+      const containsIndex = normalizedHeaders.findIndex(
+        (header) => header.includes(pattern) && !this.isCompanyColumn(header),
+      );
       if (containsIndex !== -1) {
         return originalHeaders[containsIndex];
       }

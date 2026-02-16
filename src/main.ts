@@ -1,4 +1,5 @@
 import { NestFactory } from '@nestjs/core';
+import type { NestApplicationOptions } from '@nestjs/common';
 import { apiReference } from '@scalar/nestjs-api-reference';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import type { Request, Response } from 'express';
@@ -11,7 +12,11 @@ import { AppModule } from './app.module';
 import { V1DeprecationInterceptor } from '@/infra/http/interceptors/v1-deprecation.interceptor';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const isProduction = process.env.NODE_ENV === 'production';
+  const loggerConfig: NestApplicationOptions = isProduction
+    ? { logger: ['warn', 'error'] }
+    : {};
+  const app = await NestFactory.create(AppModule, loggerConfig);
 
   app.enableCors({
     origin: true,

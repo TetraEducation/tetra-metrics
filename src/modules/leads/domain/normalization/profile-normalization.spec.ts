@@ -3,8 +3,12 @@ import {
   formatAgeRange,
   formatSalaryRange,
   normalizeCompanySize,
+  normalizeCompanyName,
   normalizeEducationLevel,
+  normalizeExcelKnowledge,
   normalizeGender,
+  normalizeJobRole,
+  normalizeSeniorityLevel,
   parseAgeRange,
   parseSalaryRange,
   withUnknownValueCount,
@@ -137,6 +141,38 @@ describe('profile-normalization', () => {
       expect(normalizeCompanySize('porte galáctico')).toBeNull();
       expect(normalizeEducationLevel('curso livre')).toBeNull();
     });
+
+    it('normaliza nível de Excel para chaves canônicas', () => {
+      expect(normalizeExcelKnowledge('Iniciante (estou dando os primeiros passos)')).toBe(
+        'beginner',
+      );
+      expect(
+        normalizeExcelKnowledge(
+          'Intermediário (conheço PROCV, Tabela Dinâmica, SOMASE e as funções mais usadas no dia a dia das empresas)',
+        ),
+      ).toBe('intermediate');
+      expect(normalizeExcelKnowledge('Avançado')).toBe('advanced');
+      expect(normalizeExcelKnowledge('Básico')).toBe('basic');
+    });
+
+    it('normaliza função/cargo para chaves canônicas', () => {
+      expect(normalizeJobRole('Sou empreendedor')).toBe('entrepreneur');
+      expect(normalizeJobRole('Gerente')).toBe('manager');
+      expect(normalizeJobRole('Professor')).toBe('teacher');
+      expect(normalizeJobRole('Controller')).toBe('controller');
+    });
+
+    it('normaliza senioridade para chaves canônicas', () => {
+      expect(normalizeSeniorityLevel('Júnior')).toBe('junior');
+      expect(normalizeSeniorityLevel('Pleno')).toBe('mid');
+      expect(normalizeSeniorityLevel('Sênior')).toBe('senior');
+      expect(normalizeSeniorityLevel('Especialista / Líder / Expert')).toBe('expert');
+    });
+
+    it('normaliza nome da empresa para string comparável', () => {
+      expect(normalizeCompanyName('  Açúcar & Cia  ')).toBe('acucar & cia');
+      expect(normalizeCompanyName('   ')).toBeNull();
+    });
   });
 
   describe('unknown counts', () => {
@@ -165,6 +201,9 @@ describe('profile-normalization', () => {
         gender: { 'nao sei': 2 },
         companySize: {},
         educationLevel: {},
+        excelKnowledge: {},
+        jobRole: {},
+        seniorityLevel: {},
       });
     });
   });

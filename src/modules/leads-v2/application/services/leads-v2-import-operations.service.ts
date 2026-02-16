@@ -5,6 +5,7 @@ import {
   type JobRunV2,
   type LeadsV2JobRunsRepositoryPort,
 } from '@/modules/leads-v2/application/ports/leads-v2-job-runs.port';
+import { LEADS_V2_EXPORT_CSV_JOB_NAME } from '@/modules/leads-v2/application/constants/leads-v2-job-names';
 import type {
   ImportOperationErrorDto,
   ImportOperationResponseDto,
@@ -27,6 +28,7 @@ export class LeadsV2ImportOperationsService {
   private toImportOperation(run: JobRunV2): ImportOperationResponseDto {
     const progressPercent = this.computeProgressPercent(run.processedRows, run.totalRows);
     const errors = this.extractErrors(run);
+    const exportMeta = this.extractExportMeta(run);
     return {
       id: run.id,
       status: this.mapStatus(run.status),
@@ -44,6 +46,8 @@ export class LeadsV2ImportOperationsService {
       startedAt: run.startedAt,
       finishedAt: run.finishedAt,
       correlationId: this.extractCorrelationId(run.meta),
+      downloadUrl: exportMeta.downloadUrl,
+      expiresAt: exportMeta.expiresAt,
     };
   }
 
@@ -112,5 +116,25 @@ export class LeadsV2ImportOperationsService {
       }
     }
     return null;
+  }
+
+  private extractExportMeta(run: JobRunV2): { downloadUrl: string | null; expiresAt: string | null } {
+    if (run.jobName !== LEADS_V2_EXPORT_CSV_JOB_NAME) {
+      return { downloadUrl: null, expiresAt: null };
+    }
+    const expiresAt = this.optionalMetaString(run.meta, 'expiresAt');
+    if (expiresAt && new Date(expiresAt).getTime() <= Date.now()) {
+      return { downloadUrl: null, expiresAt };
+    }
+    return {
+      downloadUrl: this.optionalMetaString(run.meta, 'downloadUrl'),
+      expiresAt,
+    };
+  }
+
+  private optionalMetaString(meta: Record<string, unknown>, key: string): string | null {
+    const value = meta[key];
+    if (typeof value !== 'string') return null;
+    return value.length > 0 ? value : null;
   }
 }

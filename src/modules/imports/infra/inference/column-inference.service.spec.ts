@@ -47,5 +47,26 @@ describe('ColumnInferenceService', () => {
     expect(inferred.surnameKey).toBe(surnameHeader);
     expect(inferred.fullNameKey).toBeNull();
   });
+
+  it('não deve usar perguntas sobre empresa como coluna de nome', () => {
+    const sut = new ColumnInferenceService();
+
+    const emailHeader = 'E-mail';
+    const companyHeader = 'Qual o nome da empresa em que trabalho atualmente?';
+
+    const headers = [emailHeader, companyHeader];
+    const rows = [
+      {
+        [emailHeader]: 'maria@example.com',
+        [companyHeader]: 'Tetra Educação',
+      },
+    ];
+
+    const inferred = sut.infer(headers, rows);
+
+    expect(inferred.fullNameKey).toBeNull();
+    expect(inferred.nameKey).toBeNull();
+    expect(inferred.surnameKey).toBeNull();
+  });
 });
 

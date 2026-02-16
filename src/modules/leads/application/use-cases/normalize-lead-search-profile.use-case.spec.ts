@@ -7,6 +7,10 @@ import type {
 import { NormalizeLeadSearchProfileUseCase } from './normalize-lead-search-profile.use-case';
 
 const QUESTION_ID = 'q-gender-1';
+const QUESTION_EXCEL_ID = 'q-excel-1';
+const QUESTION_ROLE_ID = 'q-role-1';
+const QUESTION_SENIORITY_ID = 'q-seniority-1';
+const QUESTION_COMPANY_ID = 'q-company-1';
 const JOB_NAME = 'normalize-lead-search-profile';
 
 function buildBatchItem(params: Partial<FormAnswerBatchItem>): FormAnswerBatchItem {
@@ -268,6 +272,88 @@ describe('NormalizeLeadSearchProfileUseCase', () => {
       errorMessage: 'falha no upsert',
     });
     expect(port.markJobRunCompleted).not.toHaveBeenCalled();
+  });
+
+  it('normaliza e persiste excel, função, senioridade e empresa atual', async () => {
+    const port = createPortMock();
+    port.resolveQuestionIdsByNormalizedKeys.mockResolvedValue({
+      gender: [QUESTION_ID],
+      'como-voce-considera-seus-conhecimentos-em-excel-hoje': [QUESTION_EXCEL_ID],
+      'qual-das-opcoes-descreveria-melhor-a-funcao-que-voce-desempenha-ou-a-ultima-que-desempenhou':
+        [QUESTION_ROLE_ID],
+      'qual-seu-nivel-de-senioridade': [QUESTION_SENIORITY_ID],
+      'qual-o-nome-da-empresa-em-que-trabalha-atualmente': [QUESTION_COMPANY_ID],
+    });
+    port.readFormAnswersBatch
+      .mockResolvedValueOnce([
+        buildBatchItem({
+          id: 'a-1',
+          questionId: QUESTION_EXCEL_ID,
+          leadId: 'lead-42',
+          valueText:
+            'Intermediário (conheço PROCV, Tabela Dinâmica, SOMASE e as funções mais usadas no dia a dia das empresas)',
+        }),
+        buildBatchItem({
+          id: 'a-2',
+          questionId: QUESTION_ROLE_ID,
+          leadId: 'lead-42',
+          valueText: 'Sou empreendedor',
+        }),
+        buildBatchItem({
+          id: 'a-3',
+          questionId: QUESTION_SENIORITY_ID,
+          leadId: 'lead-42',
+          valueText: 'Sênior',
+        }),
+        buildBatchItem({
+          id: 'a-4',
+          questionId: QUESTION_COMPANY_ID,
+          leadId: 'lead-42',
+          valueText: 'Açúcar & Cia',
+        }),
+      ])
+      .mockResolvedValueOnce([]);
+
+    const useCase = new NormalizeLeadSearchProfileUseCase(port, createObservabilityMock());
+    await useCase.execute({ batchSize: 10 });
+
+    expect(port.upsertLeadSearchProfile).toHaveBeenCalledWith([
+      {
+        leadId: 'lead-42',
+        excelKnowledge: 'intermediate',
+        jobRole: 'entrepreneur',
+        seniorityLevel: 'senior',
+        currentCompany: 'acucar & cia',
+      },
+    ]);
+  });
+
+  it('normaliza currentCompany quando só há valueNumber e envia string', async () => {
+    const port = createPortMock();
+    port.resolveQuestionIdsByNormalizedKeys.mockResolvedValue({
+      'qual-o-nome-da-empresa-em-que-trabalha-atualmente': [QUESTION_COMPANY_ID],
+    });
+    port.readFormAnswersBatch.mockResolvedValueOnce([
+      buildBatchItem({
+        id: 'a-company-number',
+        questionId: QUESTION_COMPANY_ID,
+        leadId: 'lead-999',
+        valueText: null,
+        valueNumber: 987654,
+      }),
+    ]);
+    port.readFormAnswersBatch.mockResolvedValueOnce([]);
+
+    const useCase = new NormalizeLeadSearchProfileUseCase(port, createObservabilityMock());
+
+    await useCase.execute({ batchSize: 5 });
+
+    expect(port.upsertLeadSearchProfile).toHaveBeenCalledWith([
+      {
+        leadId: 'lead-999',
+        currentCompany: '987654',
+      },
+    ]);
   });
 });
 

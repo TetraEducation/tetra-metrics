@@ -215,6 +215,45 @@ GET /leads/list?page=1&perPage=20&tag=IEA5&salaryMin=1500&salaryMax=10000&gender
 }
 ```
 
+### GET `/v2/leads/list`
+
+A rota da V2 reusa o DTO [`LeadsListingSearchDto`](src/modules/leads/application/dto/leads-listing.dto.ts) e, portanto, aceita os mesmos filtros e paginação da rota `/leads/list`. Todos os campos são opcionais; quando enviados, passam pelas validações de tipo (ex.: enumerações, números positivos e booleanos). O retorno segue o mesmo shape `LeadsListingResult<LeadListingItem>`, então a forma de consumir a resposta permanece idêntica.
+
+**Query params principais**
+
+| Parâmetro          | Tipo    | Descrição |
+| ------------------ | ------- | --------- |
+| `page`             | number  | Página atual (mínimo `1`). |
+| `perPage`          | number  | Quantidade de itens por página (mínimo `1`). |
+| `name`             | string  | Busca por substring no nome do lead. |
+| `email`            | string  | Busca pelo e-mail. |
+| `phone`            | string  | Busca pelo telefone. |
+| `campaignName`     | string  | Filtra por nome da campanha associada ao lead. |
+| `campaignTagKey`   | string  | Filtra pela chave de campanha. |
+| `tag`              | string  | Filtra pela chave da tag. |
+| `tagId`            | UUID    | Filtra pela tag via UUID. |
+| `currentCompany`   | string  | Filtra por empresa atual do lead. |
+| `hasClintSource`   | boolean | `true` para leads com `source_system = clint`, `false` caso contrário. |
+| `salaryMin`        | number  | Filtro mínimo para `lead_search_profile.salary_min`. `0` ignora. |
+| `salaryMax`        | number  | Filtro máximo para `lead_search_profile.salary_max`. `0` ignora. |
+| `ageMin`           | number  | Filtro mínimo para idade (`lead_search_profile.age_min`). `0` ignora. |
+| `ageMax`           | number  | Filtro máximo para idade (`lead_search_profile.age_max`). `0` ignora. |
+| `gender`           | enum    | Valores: `male`, `female`, `non_binary`, `other`, `prefer_not_to_say`. |
+| `companySize`      | enum    | Valores: `micro`, `small`, `medium`, `large`, `enterprise`, `unemployed`. |
+| `educationLevel`   | enum    | Valores: `fundamental`, `high_school`, `high_school_incomplete`, `technical`, `bachelor`, `bachelor_incomplete`, `post_graduate`, `master`, `doctorate`. |
+| `excelKnowledge`   | enum    | Valores: `beginner`, `basic`, `intermediate`, `advanced`. |
+| `jobRole`          | enum    | Valores: `manager`, `director`, `consultant`, `entrepreneur`, `coordinator`, `analyst`, `teacher`, `controller`, `supervisor`. |
+| `lastActivityFrom` | string  | Data/hora mínima de última atividade (ISO 8601). |
+| `lastActivityTo`   | string  | Data/hora máxima de última atividade (ISO 8601). |
+| `orderBy`          | enum    | Ordenação por `last_activity_at`, `created_at` ou `full_name`. |
+| `orderDirection`   | enum    | Direção da ordenação: `asc` ou `desc`. |
+
+**Erro de validação**
+
+| Código | Condição |
+| ------ | -------- |
+| `422 Unprocessable Entity` | Envio de valor fora do tipo/enum esperado para qualquer query param (p.ex.: `page=0`, `gender=invalid`, `hasClintSource=maybe`). |
+
 ### GET `/leads/{id}/details`
 
 Endpoint de detalhes completos do lead.

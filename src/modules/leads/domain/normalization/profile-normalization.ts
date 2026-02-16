@@ -2,7 +2,10 @@ import { normalizeText } from '../../../imports/application/utils/normalize';
 import {
   COMPANY_SIZE_ALIASES,
   EDUCATION_LEVEL_ALIASES,
+  EXCEL_KNOWLEDGE_ALIASES,
   GENDER_ALIASES,
+  JOB_ROLE_ALIASES,
+  SENIORITY_LEVEL_ALIASES,
   type NormalizableField,
 } from './normalization.constants';
 
@@ -61,11 +64,31 @@ export function normalizeEducationLevel(valueText: string | null | undefined): s
   return normalizeByAliasesContains(valueText, EDUCATION_LEVEL_ALIASES);
 }
 
+export function normalizeExcelKnowledge(valueText: string | null | undefined): string | null {
+  return normalizeByAliasesContains(valueText, EXCEL_KNOWLEDGE_ALIASES);
+}
+
+export function normalizeJobRole(valueText: string | null | undefined): string | null {
+  return normalizeByAliasesContains(valueText, JOB_ROLE_ALIASES);
+}
+
+export function normalizeSeniorityLevel(valueText: string | null | undefined): string | null {
+  return normalizeByAliasesContains(valueText, SENIORITY_LEVEL_ALIASES);
+}
+
+export function normalizeCompanyName(valueText: string | null | undefined): string | null {
+  const normalized = normalizeComparableText(valueText);
+  return normalized || null;
+}
+
 export function createUnknownNormalizationCounts(): UnknownNormalizationCounts {
   return {
     gender: {},
     companySize: {},
     educationLevel: {},
+    excelKnowledge: {},
+    jobRole: {},
+    seniorityLevel: {},
   };
 }
 

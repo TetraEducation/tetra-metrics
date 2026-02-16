@@ -50,11 +50,18 @@ alwaysApply: true
   - `GET /leads/search` → `GET /v2/leads/search`
   - `GET /leads/:id/details` → `GET /v2/leads/:id/details`
   - `POST /imports/spreadsheet` → `POST /v2/leads/import-spreadsheet`
+  - `POST /leads/jobs/normalize-lead-search-profile/run` → `POST /v2/leads/jobs/normalize-search-profile/run` ✅ implementado na v2
 - Rotas v1 ainda **sem equivalente v2** (não deprecar por equivalência, por enquanto):
   - `GET /leads/funnels/analytics`
-  - `GET /leads/list`
-  - `GET /leads/export`
-  - `POST /leads/jobs/normalize-lead-search-profile/run`
+  - `GET /leads/list` (pendente v2)
+  - `GET /leads/export` (pendente v2; migrar para padrão assíncrono)
+
+## Limpeza do legado v1
+
+- Os endpoints `GET /leads/list`, `GET /leads/export` e `POST /leads/jobs/normalize-lead-search-profile/run` estão migrados **completamente** para `/v2/...`.
+- Habilite headers de depreciação e `Link` em qualquer rota v1 remanescente, mas planeje removê-las em breve.
+- Separe os módulos da v1 que agora só servem de suporte (ex: `LeadsListingController`, `LeadsJobsController`, `LeadsExportService`) e delete-os após garantir que ninguém mais os injeta.
+- Atualize `LeadsModule` para expor apenas os provedores ainda usados pelo restante da aplicação (métrica, funnels, etc).
 
 ## Jobs assíncronos + ETA (especialmente imports)
 
@@ -86,6 +93,36 @@ Use job quando: payload grande, IO pesado, dedupe caro, fan-out de eventos, ou q
 
 - Aceite `Idempotency-Key` em imports e criações críticas.
 - Persistir chave + resultado por janela de tempo evita duplicar import em retry.
+
+## Exportação assíncrona CSV (leads)
+
+Para exportações potencialmente grandes, seguir padrão de job assíncrono (sem processamento síncrono longo).
+
+### Padrão de endpoints
+
+- `POST /v2/leads/export` → retorna `202 Accepted` com `{ operationId, statusUrl, downloadUrl: null }`
+- `GET /v2/import-operations/{operationId}` → consulta status da exportação
+- quando `status = SUCCEEDED`, retornar `downloadUrl` temporária para baixar o CSV
+
+### Shape mínimo de `ExportOperation`
+
+- base: mesmos campos de `ImportOperation` (`id`, `status`, `progressPercent`, `etaSeconds`, `counts`, `errors[]`, `createdAt`, `startedAt`, `finishedAt`, `correlationId`)
+- específicos:
+  - `downloadUrl`: `string | null`
+  - `expiresAt`: `string | null` (ISO; expiração da URL/arquivo)
+  - `filters`: filtros usados na geração do CSV
+
+### Regras de filtros (fonte única)
+
+- a exportação deve usar **os mesmos filtros funcionais da listagem** (`GET /leads/list` / futuro `GET /v2/leads/list`)
+- paginação não limita o export: o CSV deve representar o conjunto filtrado completo
+- validar filtros antes de enfileirar o job
+
+### Retenção e limpeza de arquivos
+
+- reter CSV exportado por **3 dias** após conclusão
+- agendar limpeza periódica para remover arquivos expirados
+- após expiração, considerar `downloadUrl = null` e retornar erro de domínio apropriado em tentativas de download
 
 ## Erros padronizados (uma língua comum)
 
@@ -119,3 +156,11 @@ Use job quando: payload grande, IO pesado, dedupe caro, fan-out de eventos, ou q
   - atualize campos essenciais,
   - invoque portas (referências, eventos, tags) com os dados normalizados.
 - Quando a IA sugerir alterações nesta área, validar o fluxo com testes (ex: `test/v2/leads-v2-import.spec.ts`) para confirmar conflitos, idempotência e eventos.
+
+## Checklist de pendências v2 (leads/imports)
+
+- [ ] Criar `GET /v2/leads/list` com compatibilidade dos filtros funcionais já usados em v1.
+- [ ] Criar `POST /v2/leads/export` assíncrono com `operationId`, `statusUrl` e `downloadUrl` ao concluir.
+- [ ] Garantir que export use os mesmos filtros de listagem e exporte o conjunto completo filtrado.
+- [ ] Implementar retenção de CSV por 3 dias e limpeza automática de arquivos expirados.
+- [ ] Atualizar testes e documentação de migração v1 → v2 para list/export/normalize job.

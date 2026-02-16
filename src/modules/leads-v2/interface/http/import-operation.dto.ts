@@ -88,4 +88,18 @@ export class ImportOperationResponseDto {
     description: 'Correlation id para rastreabilidade, quando disponivel.',
   })
   correlationId!: string | null;
+
+  @ApiPropertyOptional({
+    example: '/v2/leads/exports/cmf1d1x1y0000abc123def456/download',
+    nullable: true,
+    description: 'URL temporaria para download do CSV quando a operacao for export.',
+  })
+  downloadUrl?: string | null;
+
+  @ApiPropertyOptional({
+    example: '2026-02-18T10:01:00.000Z',
+    nullable: true,
+    description: 'Data de expiração do arquivo exportado.',
+  })
+  expiresAt?: string | null;
 }

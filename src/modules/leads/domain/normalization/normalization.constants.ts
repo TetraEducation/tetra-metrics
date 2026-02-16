@@ -29,6 +29,33 @@ export const PROFILE_FIELD_TO_QUESTION_KEYS = {
     'escolaridade',
     'qual-a-sua-escolaridade',
   ],
+  excelKnowledge: [
+    'excel',
+    'nivel-excel',
+    'conhecimento-excel',
+    'conhecimentos-em-excel',
+    'como-voce-considera-seus-conhecimentos-em-excel-hoje',
+  ],
+  jobRole: [
+    'cargo',
+    'funcao',
+    'job-role',
+    'funcao-atual',
+    'ultima-funcao',
+    'qual-das-opcoes-descreveria-melhor-a-funcao-que-voce-desempenha-ou-a-ultima-que-desempenhou',
+  ],
+  seniorityLevel: [
+    'senioridade',
+    'nivel-senioridade',
+    'seniority',
+    'qual-seu-nivel-de-senioridade',
+  ],
+  currentCompany: [
+    'empresa-atual',
+    'nome-empresa-atual',
+    'current-company',
+    'qual-o-nome-da-empresa-em-que-trabalha-atualmente',
+  ],
 } as const;
 
 export const GENDER_ALIASES = {
@@ -77,6 +104,43 @@ export const EDUCATION_LEVEL_ALIASES = {
   doctorate: ['doutorado', 'doctorate', 'phd'],
 } as const;
 
-export const NORMALIZABLE_FIELDS = ['gender', 'companySize', 'educationLevel'] as const;
+export const EXCEL_KNOWLEDGE_ALIASES = {
+  beginner: ['iniciante', 'estou dando os primeiros passos'],
+  basic: ['basico', 'básico'],
+  intermediate: [
+    'intermediario',
+    'intermediário',
+    'conheco procv tabela dinamica somase e as funcoes mais usadas no dia a dia das empresas',
+  ],
+  advanced: ['avancado', 'avançado'],
+} as const;
+
+export const JOB_ROLE_ALIASES = {
+  manager: ['gerente'],
+  director: ['diretor'],
+  consultant: ['consultor'],
+  entrepreneur: ['sou empreendedor', 'empreendedor', 'empreendedora'],
+  coordinator: ['coordenador', 'coordenadora'],
+  analyst: ['analista'],
+  teacher: ['professor', 'professora'],
+  controller: ['controller'],
+  supervisor: ['supervisor', 'supervisora'],
+} as const;
+
+export const SENIORITY_LEVEL_ALIASES = {
+  expert: ['especialista', 'lider', 'líder', 'expert', 'especialista lider expert'],
+  junior: ['junior', 'júnior'],
+  mid: ['pleno'],
+  senior: ['senior', 'sênior'],
+} as const;
+
+export const NORMALIZABLE_FIELDS = [
+  'gender',
+  'companySize',
+  'educationLevel',
+  'excelKnowledge',
+  'jobRole',
+  'seniorityLevel',
+] as const;
 
 export type NormalizableField = (typeof NORMALIZABLE_FIELDS)[number];

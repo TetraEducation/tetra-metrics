@@ -16,7 +16,7 @@ export class ImportOperationsController {
 
   @Get(':operationId')
   @ApiOperation({
-    summary: 'Consulta o status de uma operacao assincrona de importacao',
+    summary: 'Consulta o status de uma operacao assincrona de importacao ou exportacao',
   })
   @ApiParam({
     name: 'operationId',
@@ -25,7 +25,7 @@ export class ImportOperationsController {
     example: 'cmf1d1x1y0000abc123def456',
   })
   @ApiOkResponse({
-    description: 'Detalhe da operacao de importacao.',
+    description: 'Detalhe da operacao assincrona.',
     type: ImportOperationResponseDto,
   })
   @ApiNotFoundResponse({

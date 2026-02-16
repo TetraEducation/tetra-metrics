@@ -171,6 +171,10 @@ export class SupabaseNormalizeLeadSearchProfileRepository
       gender: row.gender ?? null,
       company_size: row.companySize ?? null,
       education_level: row.educationLevel ?? null,
+      excel_knowledge: row.excelKnowledge ?? null,
+      job_role: row.jobRole ?? null,
+      seniority_level: row.seniorityLevel ?? null,
+      current_company: row.currentCompany ?? null,
     }));
 
     const { error } = await this.supabase

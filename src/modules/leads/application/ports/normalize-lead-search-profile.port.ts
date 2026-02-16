@@ -35,6 +35,10 @@ export interface LeadSearchProfileUpsertPayload {
   gender?: string | null;
   companySize?: string | null;
   educationLevel?: string | null;
+  excelKnowledge?: string | null;
+  jobRole?: string | null;
+  seniorityLevel?: string | null;
+  currentCompany?: string | null;
 }
 
 export interface NormalizeLeadSearchProfilePort {

@@ -53,9 +53,42 @@ model Leads {
   tags            LeadTags[]
   events          LeadEvents[]
   formSubmissions FormSubmissions[]
+  searchProfile   LeadSearchProfile?
 
   @@index([lastActivityAt], map: "idx_leads_last_activity")
   @@map("leads")
+}
+
+model LeadSearchProfile {
+  leadId         String   @id @map("lead_id")
+  salaryMin      Decimal? @map("salary_min") @db.Decimal(10, 2)
+  salaryMax      Decimal? @map("salary_max") @db.Decimal(10, 2)
+  ageMin         Int?     @map("age_min")
+  ageMax         Int?     @map("age_max")
+  gender         String?  @map("gender")
+  companySize    String?  @map("company_size")
+  educationLevel String?  @map("education_level")
+  excelKnowledge String?  @map("excel_knowledge")
+  jobRole        String?  @map("job_role")
+  seniorityLevel String?  @map("seniority_level")
+  currentCompany String?  @map("current_company")
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  lead           Leads    @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([salaryMin], map: "lead_search_profile_salary_min_idx")
+  @@index([salaryMax], map: "lead_search_profile_salary_max_idx")
+  @@index([ageMin], map: "lead_search_profile_age_min_idx")
+  @@index([ageMax], map: "lead_search_profile_age_max_idx")
+  @@index([gender], map: "lead_search_profile_gender_idx")
+  @@index([companySize], map: "lead_search_profile_company_size_idx")
+  @@index([educationLevel], map: "lead_search_profile_education_level_idx")
+  @@index([excelKnowledge], map: "lead_search_profile_excel_knowledge_idx")
+  @@index([jobRole], map: "lead_search_profile_job_role_idx")
+  @@index([seniorityLevel], map: "lead_search_profile_seniority_level_idx")
+  @@index([currentCompany], map: "lead_search_profile_current_company_idx")
+  @@index([salaryMin, salaryMax], map: "lead_search_profile_salary_range_idx")
+  @@index([ageMin, ageMax], map: "lead_search_profile_age_range_idx")
+  @@map("lead_search_profile")
 }
 
 model LeadIdentifiers {

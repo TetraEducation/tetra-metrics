@@ -7,13 +7,17 @@ import {
   Param,
   Post,
   Query,
+  Res,
+  StreamableFile,
   UploadedFile,
   UseInterceptors,
   UsePipes,
   ValidationPipe,
 } from '@nestjs/common';
+import { createReadStream } from 'node:fs';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
+import type { Response } from 'express';
 import {
   ApiBadRequestResponse,
   ApiBody,
@@ -33,11 +37,18 @@ import { LeadsV2SearchService } from '@/modules/leads-v2/application/services/le
 import { LeadsV2DetailService } from '@/modules/leads-v2/application/services/leads-v2-detail.service';
 import { LeadsV2SpreadsheetJobsService } from '@/modules/leads-v2/application/services/leads-v2-spreadsheet-jobs.service';
 import { LeadsV2SurveySpreadsheetJobsService } from '@/modules/leads-v2/application/services/leads-v2-survey-spreadsheet-jobs.service';
+import { LeadsV2NormalizeSearchProfileJobsService } from '@/modules/leads-v2/application/services/leads-v2-normalize-search-profile-jobs.service';
+import { LeadsV2ExportJobsService } from '@/modules/leads-v2/application/services/leads-v2-export-jobs.service';
+import { ListLeadsV2UseCase } from '@/modules/leads-v2/application/use-cases/list-leads-v2.use-case';
 import { ImportSpreadsheetV2Dto } from '@/modules/leads-v2/interface/http/import-spreadsheet-v2.dto';
 import { ImportSurveySpreadsheetV2Dto } from '@/modules/leads-v2/interface/http/import-survey-spreadsheet-v2.dto';
 import { ImportOneLeadV2Dto } from '@/modules/leads-v2/interface/http/import-one-lead-v2.dto';
 import {
+  ExportLeadsV2Dto,
+  ExportLeadsV2QueuedResponseDto,
+  LeadsV2ListQueryDto,
   ListLeadsV2JobRunsQueryDto,
+  RunNormalizeSearchProfileV2Dto,
   SpreadsheetImportQueuedResponseDto,
 } from '@/modules/leads-v2/interface/http/leads-v2-jobs.dto';
 import {
@@ -54,6 +65,9 @@ export class LeadsV2Controller {
     private readonly leadsDetail: LeadsV2DetailService,
     private readonly spreadsheetJobs: LeadsV2SpreadsheetJobsService,
     private readonly surveySpreadsheetJobs: LeadsV2SurveySpreadsheetJobsService,
+    private readonly normalizeSearchProfileJobs: LeadsV2NormalizeSearchProfileJobsService,
+    private readonly listLeadsV2: ListLeadsV2UseCase,
+    private readonly exportJobs: LeadsV2ExportJobsService,
   ) {}
 
   @Post('import-one')
@@ -256,6 +270,91 @@ export class LeadsV2Controller {
       jobRunId: retried.id,
       status: retried.status,
     };
+  }
+
+  @Post('jobs/normalize-search-profile/run')
+  @HttpCode(202)
+  @ApiOperation({
+    summary: 'Dispara normalizacao do lead search profile na V2',
+  })
+  @UsePipes(
+    new ValidationPipe({
+      transform: true,
+      whitelist: true,
+    }),
+  )
+  async runNormalizeSearchProfile(@Body() body: RunNormalizeSearchProfileV2Dto) {
+    return this.normalizeSearchProfileJobs.runManual({
+      batchSize: body.batchSize,
+      dryRun: body.dryRun,
+      fromStart: body.fromStart,
+    });
+  }
+
+  @Get('jobs/normalize-search-profile/status')
+  @ApiOperation({
+    summary: 'Retorna status mais recente da normalizacao de profile na V2',
+  })
+  async getNormalizeSearchProfileStatus() {
+    const latestRun = await this.normalizeSearchProfileJobs.getLatestRun();
+    return { run: latestRun };
+  }
+
+  @Get('list')
+  @ApiOperation({
+    summary: 'Lista leads na V2',
+    description:
+      'Retorna listagem paginada com filtros equivalentes à listagem da v1. Consulte os query params documentados abaixo para combinações de filtro.',
+  })
+  @UsePipes(
+    new ValidationPipe({
+      transform: true,
+      whitelist: true,
+    }),
+  )
+  async list(@Query() query: LeadsV2ListQueryDto) {
+    return this.listLeadsV2.execute(query);
+  }
+
+  @Post('export')
+  @HttpCode(202)
+  @ApiOperation({
+    summary: 'Enfileira exportação de leads em CSV na V2',
+    description: 'Cria operação assíncrona de exportação com os mesmos filtros da listagem.',
+  })
+  @ApiBody({ type: ExportLeadsV2Dto })
+  @ApiCreatedResponse({
+    description: 'Exportação enfileirada com sucesso.',
+    type: ExportLeadsV2QueuedResponseDto,
+  })
+  @UsePipes(
+    new ValidationPipe({
+      transform: true,
+      whitelist: true,
+    }),
+  )
+  async export(@Body() body: ExportLeadsV2Dto): Promise<ExportLeadsV2QueuedResponseDto> {
+    const queued = await this.exportJobs.queueExport(body);
+    return {
+      ok: true,
+      operationId: queued.operationId,
+      statusUrl: `/v2/import-operations/${queued.operationId}`,
+      status: queued.status,
+    };
+  }
+
+  @Get('exports/:operationId/download')
+  @ApiOperation({
+    summary: 'Baixa CSV de uma exportação concluída',
+  })
+  async downloadExport(
+    @Param('operationId') operationId: string,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<StreamableFile> {
+    const file = await this.exportJobs.getDownloadFile(operationId);
+    response.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    response.setHeader('Content-Disposition', `attachment; filename="${file.fileName}"`);
+    return new StreamableFile(createReadStream(file.path));
   }
 
   @Get('search')

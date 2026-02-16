@@ -12,12 +12,17 @@ import {
 } from '@/modules/leads/application/ports/normalize-lead-search-profile.port';
 import {
   createUnknownNormalizationCounts,
+  normalizeCompanyName,
   normalizeCompanySize,
   normalizeEducationLevel,
+  normalizeExcelKnowledge,
   normalizeGender,
+  normalizeJobRole,
+  normalizeSeniorityLevel,
   PROFILE_FIELD_TO_QUESTION_KEYS,
   parseAgeRange,
   parseSalaryRange,
+  type NormalizableField,
   type UnknownNormalizationCounts,
   withUnknownValueCount,
 } from '@/modules/leads/domain/normalization';
@@ -72,6 +77,9 @@ export class NormalizeLeadSearchProfileUseCase {
           processedRows: 0,
           processedLeads: 0,
           unknownEducationCount: 0,
+          unknownExcelKnowledgeCount: 0,
+          unknownJobRoleCount: 0,
+          unknownSeniorityLevelCount: 0,
           jobName,
         });
 
@@ -127,6 +135,9 @@ export class NormalizeLeadSearchProfileUseCase {
           processedRows: 0,
           processedLeads: 0,
           unknownEducationCount: 0,
+          unknownExcelKnowledgeCount: 0,
+          unknownJobRoleCount: 0,
+          unknownSeniorityLevelCount: 0,
           jobName,
         });
         return {
@@ -157,6 +168,9 @@ export class NormalizeLeadSearchProfileUseCase {
       processedRows,
       processedLeads,
       unknownEducationCount: this.getUnknownEducationCount(unknownNormalizationCounts),
+      unknownExcelKnowledgeCount: this.getUnknownCount(unknownNormalizationCounts, 'excelKnowledge'),
+      unknownJobRoleCount: this.getUnknownCount(unknownNormalizationCounts, 'jobRole'),
+      unknownSeniorityLevelCount: this.getUnknownCount(unknownNormalizationCounts, 'seniorityLevel'),
       resumedFromJobRunId: resumeFrom?.id ?? null,
       dryRun,
     });
@@ -202,6 +216,15 @@ export class NormalizeLeadSearchProfileUseCase {
           processedRows,
           processedLeads,
           unknownEducationCount: this.getUnknownEducationCount(unknownNormalizationCounts),
+          unknownExcelKnowledgeCount: this.getUnknownCount(
+            unknownNormalizationCounts,
+            'excelKnowledge',
+          ),
+          unknownJobRoleCount: this.getUnknownCount(unknownNormalizationCounts, 'jobRole'),
+          unknownSeniorityLevelCount: this.getUnknownCount(
+            unknownNormalizationCounts,
+            'seniorityLevel',
+          ),
           reason: 'no_questions_found',
         });
 
@@ -301,6 +324,15 @@ export class NormalizeLeadSearchProfileUseCase {
           processedRows,
           processedLeads,
           unknownEducationCount: this.getUnknownEducationCount(unknownNormalizationCounts),
+          unknownExcelKnowledgeCount: this.getUnknownCount(
+            unknownNormalizationCounts,
+            'excelKnowledge',
+          ),
+          unknownJobRoleCount: this.getUnknownCount(unknownNormalizationCounts, 'jobRole'),
+          unknownSeniorityLevelCount: this.getUnknownCount(
+            unknownNormalizationCounts,
+            'seniorityLevel',
+          ),
           batchRows: batch.length,
           batchLeads: payload.length,
         });
@@ -322,6 +354,9 @@ export class NormalizeLeadSearchProfileUseCase {
         processedRows,
         processedLeads,
         unknownEducationCount: this.getUnknownEducationCount(unknownNormalizationCounts),
+        unknownExcelKnowledgeCount: this.getUnknownCount(unknownNormalizationCounts, 'excelKnowledge'),
+        unknownJobRoleCount: this.getUnknownCount(unknownNormalizationCounts, 'jobRole'),
+        unknownSeniorityLevelCount: this.getUnknownCount(unknownNormalizationCounts, 'seniorityLevel'),
       });
 
       return {
@@ -356,6 +391,15 @@ export class NormalizeLeadSearchProfileUseCase {
           processedRows,
           processedLeads,
           unknownEducationCount: this.getUnknownEducationCount(unknownNormalizationCounts),
+          unknownExcelKnowledgeCount: this.getUnknownCount(
+            unknownNormalizationCounts,
+            'excelKnowledge',
+          ),
+          unknownJobRoleCount: this.getUnknownCount(unknownNormalizationCounts, 'jobRole'),
+          unknownSeniorityLevelCount: this.getUnknownCount(
+            unknownNormalizationCounts,
+            'seniorityLevel',
+          ),
           errorMessage,
         },
         error,
@@ -460,6 +504,10 @@ export class NormalizeLeadSearchProfileUseCase {
     return Object.values(counts.educationLevel).reduce((acc, value) => acc + value, 0);
   }
 
+  private getUnknownCount(counts: UnknownNormalizationCounts, field: NormalizableField): number {
+    return Object.values(counts[field]).reduce((acc, value) => acc + value, 0);
+  }
+
   private parseFieldValue(
     field: keyof LeadSearchProfileUpsertPayload,
     answer: FormAnswerBatchItem,
@@ -468,7 +516,21 @@ export class NormalizeLeadSearchProfileUseCase {
     value: string | number | null;
     unknownNormalizationCounts: UnknownNormalizationCounts;
   } {
-    if (typeof answer.valueNumber === 'number' && Number.isFinite(answer.valueNumber)) {
+    const currentCompanyField: keyof LeadSearchProfileUpsertPayload = 'currentCompany';
+    if (field === currentCompanyField) {
+      const rawCompanyValue =
+        answer.valueText ??
+        (typeof answer.valueNumber === 'number' && Number.isFinite(answer.valueNumber)
+          ? String(answer.valueNumber)
+          : null);
+      return {
+        value: normalizeCompanyName(rawCompanyValue),
+        unknownNormalizationCounts,
+      };
+    }
+
+    const numericFields = new Set(['salaryMin', 'salaryMax', 'ageMin', 'ageMax']);
+    if (numericFields.has(field) && typeof answer.valueNumber === 'number' && Number.isFinite(answer.valueNumber)) {
       return { value: answer.valueNumber, unknownNormalizationCounts };
     }
 
@@ -521,6 +583,45 @@ export class NormalizeLeadSearchProfileUseCase {
         unknownNormalizationCounts: withUnknownValueCount({
           counts: unknownNormalizationCounts,
           field: 'educationLevel',
+          rawValue: answer.valueText,
+          normalizedValue: normalized,
+        }),
+      };
+    }
+
+    if (field === 'excelKnowledge') {
+      const normalized = normalizeExcelKnowledge(answer.valueText);
+      return {
+        value: normalized,
+        unknownNormalizationCounts: withUnknownValueCount({
+          counts: unknownNormalizationCounts,
+          field: 'excelKnowledge',
+          rawValue: answer.valueText,
+          normalizedValue: normalized,
+        }),
+      };
+    }
+
+    if (field === 'jobRole') {
+      const normalized = normalizeJobRole(answer.valueText);
+      return {
+        value: normalized,
+        unknownNormalizationCounts: withUnknownValueCount({
+          counts: unknownNormalizationCounts,
+          field: 'jobRole',
+          rawValue: answer.valueText,
+          normalizedValue: normalized,
+        }),
+      };
+    }
+
+    if (field === 'seniorityLevel') {
+      const normalized = normalizeSeniorityLevel(answer.valueText);
+      return {
+        value: normalized,
+        unknownNormalizationCounts: withUnknownValueCount({
+          counts: unknownNormalizationCounts,
+          field: 'seniorityLevel',
           rawValue: answer.valueText,
           normalizedValue: normalized,
         }),
