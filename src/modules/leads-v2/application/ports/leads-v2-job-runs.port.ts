@@ -53,7 +53,7 @@ export interface LeadsV2JobRunsRepositoryPort {
   claimNextRunnable(jobName: string, maxRetries: number): Promise<JobRunV2 | null>;
   findById(id: string): Promise<JobRunV2 | null>;
   hasRunning(jobName: string): Promise<boolean>;
-  list(params: { status?: JobRunStatusV2; limit: number }): Promise<JobRunV2[]>;
+  list(params: { jobName?: string; status?: JobRunStatusV2; limit: number }): Promise<JobRunV2[]>;
   updateFilePath(id: string, filePath: string, meta?: Record<string, unknown>): Promise<void>;
   markCompleted(id: string, input: Pick<UpdateJobRunProgressInput, 'totalRows' | 'processedRows' | 'processedOk' | 'processedErrors' | 'meta'>): Promise<void>;
   markFailed(id: string, input: { errorMessage: string; meta?: Record<string, unknown> }): Promise<void>;

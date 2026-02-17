@@ -43,6 +43,27 @@ export class ListLeadsV2JobRunsQueryDto {
   limit?: number;
 }
 
+export class ListLeadsV2ExportOperationsQueryDto {
+  @ApiPropertyOptional({
+    enum: JOB_RUN_STATUSES,
+    description: 'Filtra por status da operação de exportação.',
+  })
+  @IsOptional()
+  @IsEnum(JOB_RUN_STATUSES)
+  status?: JobRunStatusV2;
+
+  @ApiPropertyOptional({
+    default: 20,
+    minimum: 1,
+    maximum: 100,
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  limit?: number;
+}
+
 export class SpreadsheetImportQueuedResponseDto {
   @ApiProperty({ example: true })
   ok!: boolean;

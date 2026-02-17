@@ -128,6 +128,87 @@ describe('LeadsV2ImportOperationsService', () => {
     expect(operation?.expiresAt).toBe(futureDate);
   });
 
+  it('lista operações de export com filtro de status e limite', async () => {
+    const jobRuns = buildJobRunsMock();
+    (jobRuns.list as jest.Mock).mockResolvedValue([
+      {
+        id: 'job-export-1',
+        jobName: 'leads_v2_export_csv',
+        status: 'COMPLETED',
+        fileName: 'file.csv',
+        filePath: '/tmp/file.csv',
+        fileHash: 'hash',
+        sourceSystem: 'SPREADSHEET',
+        tagKey: 'EXPORT',
+        startedAt: '2026-02-14T10:00:00.000Z',
+        finishedAt: '2026-02-14T10:01:00.000Z',
+        lastProcessedRow: 120,
+        totalRows: 120,
+        processedRows: 120,
+        processedOk: 120,
+        processedErrors: 0,
+        retryCount: 1,
+        errorMessage: null,
+        meta: {
+          downloadUrl: '/v2/leads/exports/job-export-1/download',
+          expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+        },
+        createdAt: '2026-02-14T09:59:30.000Z',
+        updatedAt: '2026-02-14T10:01:00.000Z',
+      },
+    ]);
+
+    const service = new LeadsV2ImportOperationsService(jobRuns);
+    const operations = await service.listExportOperations({ status: 'COMPLETED', limit: 999 });
+
+    expect(jobRuns.list).toHaveBeenCalledWith({
+      jobName: 'leads_v2_export_csv',
+      status: 'COMPLETED',
+      limit: 100,
+    });
+    expect(operations).toHaveLength(1);
+    expect(operations[0].id).toBe('job-export-1');
+    expect(operations[0].downloadUrl).toBe('/v2/leads/exports/job-export-1/download');
+  });
+
+  it('remove downloadUrl quando exportação listada está expirada', async () => {
+    const jobRuns = buildJobRunsMock();
+    (jobRuns.list as jest.Mock).mockResolvedValue([
+      {
+        id: 'job-export-expired',
+        jobName: 'leads_v2_export_csv',
+        status: 'COMPLETED',
+        fileName: 'file.csv',
+        filePath: '/tmp/file.csv',
+        fileHash: 'hash',
+        sourceSystem: 'SPREADSHEET',
+        tagKey: 'EXPORT',
+        startedAt: '2026-02-14T10:00:00.000Z',
+        finishedAt: '2026-02-14T10:01:00.000Z',
+        lastProcessedRow: 120,
+        totalRows: 120,
+        processedRows: 120,
+        processedOk: 120,
+        processedErrors: 0,
+        retryCount: 1,
+        errorMessage: null,
+        meta: {
+          downloadUrl: '/v2/leads/exports/job-export-expired/download',
+          expiresAt: '2020-01-01T00:00:00.000Z',
+        },
+        createdAt: '2026-02-14T09:59:30.000Z',
+        updatedAt: '2026-02-14T10:01:00.000Z',
+      },
+    ]);
+
+    const service = new LeadsV2ImportOperationsService(jobRuns);
+    const operations = await service.listExportOperations({});
+
+    expect(operations).toHaveLength(1);
+    expect(operations[0].downloadUrl).toBeNull();
+    expect(operations[0].expiresAt).toBe('2020-01-01T00:00:00.000Z');
+  });
+
   it('retorna null quando operacao nao existe', async () => {
     const jobRuns = buildJobRunsMock();
     (jobRuns.findById as jest.Mock).mockResolvedValue(null);

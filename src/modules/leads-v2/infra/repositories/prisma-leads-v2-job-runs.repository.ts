@@ -34,7 +34,7 @@ type PrismaV2Client = {
     }) => Promise<JobRunRow | null>;
     findUnique: (args: { where: { id: string } }) => Promise<JobRunRow | null>;
     findMany: (args: {
-      where?: { status?: JobRunStatusV2 };
+      where?: { jobName?: string; status?: JobRunStatusV2 };
       orderBy: { createdAt: 'desc' };
       take: number;
     }) => Promise<JobRunRow[]>;
@@ -196,9 +196,12 @@ export class PrismaLeadsV2JobRunsRepository implements LeadsV2JobRunsRepositoryP
     return count > 0;
   }
 
-  async list(params: { status?: JobRunStatusV2; limit: number }): Promise<JobRunV2[]> {
+  async list(params: { jobName?: string; status?: JobRunStatusV2; limit: number }): Promise<JobRunV2[]> {
     const rows = await this.prisma.jobRuns.findMany({
-      where: params.status ? { status: params.status } : undefined,
+      where: {
+        ...(params.jobName ? { jobName: params.jobName } : {}),
+        ...(params.status ? { status: params.status } : {}),
+      },
       orderBy: { createdAt: 'desc' },
       take: params.limit,
     });

@@ -39,6 +39,7 @@ import { LeadsV2SpreadsheetJobsService } from '@/modules/leads-v2/application/se
 import { LeadsV2SurveySpreadsheetJobsService } from '@/modules/leads-v2/application/services/leads-v2-survey-spreadsheet-jobs.service';
 import { LeadsV2NormalizeSearchProfileJobsService } from '@/modules/leads-v2/application/services/leads-v2-normalize-search-profile-jobs.service';
 import { LeadsV2ExportJobsService } from '@/modules/leads-v2/application/services/leads-v2-export-jobs.service';
+import { LeadsV2ImportOperationsService } from '@/modules/leads-v2/application/services/leads-v2-import-operations.service';
 import { ListLeadsV2UseCase } from '@/modules/leads-v2/application/use-cases/list-leads-v2.use-case';
 import { ImportSpreadsheetV2Dto } from '@/modules/leads-v2/interface/http/import-spreadsheet-v2.dto';
 import { ImportSurveySpreadsheetV2Dto } from '@/modules/leads-v2/interface/http/import-survey-spreadsheet-v2.dto';
@@ -46,11 +47,13 @@ import { ImportOneLeadV2Dto } from '@/modules/leads-v2/interface/http/import-one
 import {
   ExportLeadsV2Dto,
   ExportLeadsV2QueuedResponseDto,
+  ListLeadsV2ExportOperationsQueryDto,
   LeadsV2ListQueryDto,
   ListLeadsV2JobRunsQueryDto,
   RunNormalizeSearchProfileV2Dto,
   SpreadsheetImportQueuedResponseDto,
 } from '@/modules/leads-v2/interface/http/leads-v2-jobs.dto';
+import { ImportOperationResponseDto } from '@/modules/leads-v2/interface/http/import-operation.dto';
 import {
   ImportOneLeadV2ResponseDto,
   LeadDetailResponseDto,
@@ -68,6 +71,7 @@ export class LeadsV2Controller {
     private readonly normalizeSearchProfileJobs: LeadsV2NormalizeSearchProfileJobsService,
     private readonly listLeadsV2: ListLeadsV2UseCase,
     private readonly exportJobs: LeadsV2ExportJobsService,
+    private readonly importOperations: LeadsV2ImportOperationsService,
   ) {}
 
   @Post('import-one')
@@ -393,6 +397,25 @@ export class LeadsV2Controller {
       statusUrl: `/v2/import-operations/${queued.operationId}`,
       status: queued.status,
     };
+  }
+
+  @Get('exports/operations')
+  @ApiOperation({
+    summary: 'Lista operações de exportação de leads na V2',
+    description: 'Permite recuperar operações recentes de exportação para retomar download/polling.',
+  })
+  @ApiOkResponse({
+    description: 'Operações de exportação mais recentes.',
+    type: ImportOperationResponseDto,
+    isArray: true,
+  })
+  async listExportOperations(
+    @Query() query: ListLeadsV2ExportOperationsQueryDto,
+  ): Promise<ImportOperationResponseDto[]> {
+    return this.importOperations.listExportOperations({
+      status: query.status,
+      limit: query.limit,
+    });
   }
 
   @Get('exports/:operationId/download')

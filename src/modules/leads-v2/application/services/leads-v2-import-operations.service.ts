@@ -25,6 +25,16 @@ export class LeadsV2ImportOperationsService {
     return this.toImportOperation(run);
   }
 
+  async listExportOperations(params: { status?: JobRunStatusV2; limit?: number }) {
+    const limit = Math.min(Math.max(params.limit ?? 20, 1), 100);
+    const runs = await this.jobRuns.list({
+      jobName: LEADS_V2_EXPORT_CSV_JOB_NAME,
+      status: params.status,
+      limit,
+    });
+    return runs.map((run) => this.toImportOperation(run));
+  }
+
   private toImportOperation(run: JobRunV2): ImportOperationResponseDto {
     const progressPercent = this.computeProgressPercent(run.processedRows, run.totalRows);
     const errors = this.extractErrors(run);

@@ -22,6 +22,7 @@ describe('LeadsV2Controller', () => {
       {} as never,
       {} as never,
       {} as never,
+      {} as never,
     );
 
     const response = await controller.importSpreadsheet(
@@ -69,6 +70,7 @@ describe('LeadsV2Controller', () => {
       {} as never,
       {} as never,
       {} as never,
+      {} as never,
     );
 
     await expect(
@@ -107,6 +109,7 @@ describe('LeadsV2Controller', () => {
       {} as never,
       {} as never,
       exportJobs as never,
+      {} as never,
     );
 
     const response = {
@@ -122,5 +125,47 @@ describe('LeadsV2Controller', () => {
       'Content-Disposition',
       'attachment; filename="export.csv"',
     );
+  });
+
+  it('lista operações de exportação com filtros', async () => {
+    const importOperations = {
+      listExportOperations: jest.fn().mockResolvedValue([
+        {
+          id: 'job-export-1',
+          status: 'SUCCEEDED',
+          progressPercent: 100,
+          etaSeconds: null,
+          counts: { processed: 10, created: 10, updated: 0, skipped: 0, failed: 0 },
+          errors: [],
+          createdAt: '2026-02-14T09:59:30.000Z',
+          startedAt: '2026-02-14T10:00:00.000Z',
+          finishedAt: '2026-02-14T10:01:00.000Z',
+          correlationId: 'corr-1',
+          downloadUrl: '/v2/leads/exports/job-export-1/download',
+          expiresAt: '2026-02-17T10:01:00.000Z',
+        },
+      ]),
+    };
+
+    const controller = new LeadsV2Controller(
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      importOperations as never,
+    );
+
+    const response = await controller.listExportOperations({ status: 'COMPLETED', limit: 10 });
+
+    expect(importOperations.listExportOperations).toHaveBeenCalledWith({
+      status: 'COMPLETED',
+      limit: 10,
+    });
+    expect(response).toHaveLength(1);
+    expect(response[0].id).toBe('job-export-1');
   });
 });
