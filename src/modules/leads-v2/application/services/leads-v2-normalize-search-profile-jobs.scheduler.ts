@@ -12,8 +12,11 @@ export class LeadsV2NormalizeSearchProfileJobsScheduler implements OnModuleInit 
 
   constructor(private readonly jobsService: LeadsV2NormalizeSearchProfileJobsService) {}
 
-  async onModuleInit(): Promise<void> {
-    await this.runPollingCycle('startup');
+  onModuleInit(): void {
+    // Não bloqueia o bootstrap da API: a recuperação inicial roda em background.
+    setImmediate(() => {
+      void this.runPollingCycle('startup');
+    });
   }
 
   @Cron('*/20 * * * * *')
