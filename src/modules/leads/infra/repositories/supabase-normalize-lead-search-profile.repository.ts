@@ -230,6 +230,49 @@ export class SupabaseNormalizeLeadSearchProfileRepository
 
     return (count ?? 0) > 0;
   }
+
+  async failStaleRunningJobRuns(params: {
+    jobName: string;
+    staleBefore: Date;
+    reason: string;
+  }): Promise<number> {
+    const staleBeforeIso = params.staleBefore.toISOString();
+    const { data, error } = await this.supabase
+      .from('job_runs')
+      .select('id')
+      .eq('job_name', params.jobName)
+      .eq('status', 'running')
+      .lt('updated_at', staleBeforeIso);
+
+    if (error) {
+      throw new InternalServerErrorException(
+        `Erro ao buscar job_runs stale para recuperação: ${error.message}`,
+      );
+    }
+
+    const ids = (data ?? [])
+      .map((row) => String((row as { id?: unknown }).id ?? ''))
+      .filter((value) => value.length > 0);
+    if (ids.length === 0) return 0;
+
+    const { error: updateError } = await this.supabase
+      .from('job_runs')
+      .update({
+        status: 'failed',
+        finished_at: new Date().toISOString(),
+        error_message: params.reason,
+      })
+      .in('id', ids);
+
+    if (updateError) {
+      throw new InternalServerErrorException(
+        `Erro ao recuperar job_runs stale: ${updateError.message}`,
+      );
+    }
+
+    return ids.length;
+  }
+
   async createJobRun(params: {
     jobName: string;
     status: JobRunStatus;

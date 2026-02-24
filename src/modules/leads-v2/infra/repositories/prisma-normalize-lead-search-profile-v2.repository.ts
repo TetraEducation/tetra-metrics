@@ -25,6 +25,7 @@ type JobRunRow = {
   processedRows: number;
   processedOk: number;
   meta: Record<string, unknown> | null;
+  updatedAt?: Date;
 };
 
 type PrismaV2Client = {
@@ -112,6 +113,19 @@ type PrismaV2Client = {
         updatedAt: Date;
       };
     }) => Promise<unknown>;
+    updateMany: (args: {
+      where: {
+        jobName: string;
+        status: PrismaJobStatus;
+        updatedAt: { lt: Date };
+      };
+      data: {
+        status: PrismaJobStatus;
+        errorMessage: string;
+        finishedAt: Date;
+        updatedAt: Date;
+      };
+    }) => Promise<{ count: number }>;
   };
 };
 
@@ -253,6 +267,28 @@ export class PrismaNormalizeLeadSearchProfileV2Repository implements NormalizeLe
       },
     });
     return count > 0;
+  }
+
+  async failStaleRunningJobRuns(params: {
+    jobName: string;
+    staleBefore: Date;
+    reason: string;
+  }): Promise<number> {
+    const result = await this.prisma.jobRuns.updateMany({
+      where: {
+        jobName: params.jobName,
+        status: 'RUNNING',
+        updatedAt: { lt: params.staleBefore },
+      },
+      data: {
+        status: 'FAILED',
+        errorMessage: params.reason,
+        finishedAt: new Date(),
+        updatedAt: new Date(),
+      },
+    });
+
+    return result.count;
   }
 
   async updateJobRunProgress(params: {

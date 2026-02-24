@@ -14,6 +14,7 @@ function buildNormalizePortMock(): NormalizeLeadSearchProfilePort {
     findLatestJobRunByStatuses: jest.fn(),
     createJobRun: jest.fn(),
     hasRunningJobRun: jest.fn().mockResolvedValue(false),
+    failStaleRunningJobRuns: jest.fn().mockResolvedValue(0),
     updateJobRunProgress: jest.fn(),
     markJobRunFailed: jest.fn(),
     markJobRunCompleted: jest.fn(),
@@ -78,5 +79,61 @@ describe('LeadsV2NormalizeSearchProfileJobsService', () => {
     );
 
     await expect(service.getLatestRun()).resolves.toEqual(latest);
+  });
+
+  it('não retoma quando não encontra run stale para recuperação', async () => {
+    const port = buildNormalizePortMock();
+    (port.failStaleRunningJobRuns as jest.Mock).mockResolvedValue(0);
+    const normalizeUseCase = {
+      execute: jest.fn(),
+    } as unknown as NormalizeLeadSearchProfileV2UseCase;
+    const service = new LeadsV2NormalizeSearchProfileJobsService(normalizeUseCase, port);
+
+    await service.processRecoveryCycle('startup');
+
+    expect(port.failStaleRunningJobRuns).toHaveBeenCalledWith(
+      expect.objectContaining({
+        jobName: 'normalize-lead-search-profile-v2',
+      }),
+    );
+    expect(normalizeUseCase.execute).not.toHaveBeenCalled();
+  });
+
+  it('retoma automaticamente quando recupera run stale', async () => {
+    const port = buildNormalizePortMock();
+    (port.failStaleRunningJobRuns as jest.Mock).mockResolvedValue(1);
+    (port.hasRunningJobRun as jest.Mock).mockResolvedValue(false);
+    const normalizeUseCase = {
+      execute: jest.fn().mockResolvedValue({
+        skipped: false,
+        processedRows: 11,
+        processedLeads: 7,
+      }),
+    } as unknown as NormalizeLeadSearchProfileV2UseCase;
+    const service = new LeadsV2NormalizeSearchProfileJobsService(normalizeUseCase, port);
+
+    await service.processRecoveryCycle('startup');
+
+    expect(normalizeUseCase.execute).toHaveBeenCalledWith(
+      expect.objectContaining({
+        batchSize: 500,
+        fromStart: false,
+        dryRun: false,
+      }),
+    );
+  });
+
+  it('não dispara retomada quando ainda existe run running após recuperação stale', async () => {
+    const port = buildNormalizePortMock();
+    (port.failStaleRunningJobRuns as jest.Mock).mockResolvedValue(1);
+    (port.hasRunningJobRun as jest.Mock).mockResolvedValue(true);
+    const normalizeUseCase = {
+      execute: jest.fn(),
+    } as unknown as NormalizeLeadSearchProfileV2UseCase;
+    const service = new LeadsV2NormalizeSearchProfileJobsService(normalizeUseCase, port);
+
+    await service.processRecoveryCycle('cron');
+
+    expect(normalizeUseCase.execute).not.toHaveBeenCalled();
   });
 });

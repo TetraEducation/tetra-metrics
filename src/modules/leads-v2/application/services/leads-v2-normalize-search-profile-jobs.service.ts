@@ -9,6 +9,9 @@ import {
   NormalizeLeadSearchProfileV2UseCase,
 } from '@/modules/leads-v2/application/use-cases/normalize-lead-search-profile-v2.use-case';
 
+const STALE_RUNNING_MINUTES = 5;
+const AUTO_RECOVERY_BATCH_SIZE = 500;
+
 export type QueueNormalizeSearchProfileV2Input = {
   batchSize?: number;
   dryRun?: boolean;
@@ -24,6 +27,54 @@ export class LeadsV2NormalizeSearchProfileJobsService {
     @Inject(NORMALIZE_LEAD_SEARCH_PROFILE_PORT)
     private readonly normalizePort: NormalizeLeadSearchProfilePort,
   ) {}
+
+  async processRecoveryCycle(trigger: 'cron' | 'startup' = 'cron'): Promise<void> {
+    const recovered = await this.normalizePort.failStaleRunningJobRuns({
+      jobName: NORMALIZE_LEAD_SEARCH_PROFILE_V2_JOB_NAME,
+      staleBefore: new Date(Date.now() - STALE_RUNNING_MINUTES * 60 * 1000),
+      reason: 'Run recuperada automaticamente após restart/timeout de atualização.',
+    });
+
+    if (recovered <= 0) {
+      this.logger.debug(
+        `Nenhuma execução RUNNING stale para normalização v2 no ciclo ${trigger}.`,
+      );
+      return;
+    }
+
+    this.logger.warn(
+      `${recovered} run(s) RUNNING stale da normalização v2 marcadas como FAILED para retomada.`,
+    );
+
+    const alreadyRunning = await this.normalizePort.hasRunningJobRun(
+      NORMALIZE_LEAD_SEARCH_PROFILE_V2_JOB_NAME,
+    );
+    if (alreadyRunning) {
+      this.logger.warn(
+        'Ainda existe run RUNNING após recuperação stale; retomada automática será tentada no próximo ciclo.',
+      );
+      return;
+    }
+
+    const result = await this.normalizeUseCase.execute({
+      batchSize: AUTO_RECOVERY_BATCH_SIZE,
+      dryRun: false,
+      fromStart: false,
+      metadata: {
+        trigger: `auto_recovery_${trigger}`,
+        recoveredRuns: recovered,
+      },
+    });
+
+    if (result.skipped) {
+      this.logger.warn('Retomada automática da normalização v2 ignorada: lock/race detectado.');
+      return;
+    }
+
+    this.logger.log(
+      `Retomada automática da normalização v2 concluída. processedRows=${result.processedRows}, processedLeads=${result.processedLeads}`,
+    );
+  }
 
   async runManual(input: QueueNormalizeSearchProfileV2Input) {
     const alreadyRunning = await this.normalizePort.hasRunningJobRun(

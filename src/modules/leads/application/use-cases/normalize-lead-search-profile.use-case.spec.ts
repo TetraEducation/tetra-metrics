@@ -49,6 +49,7 @@ function createPortMock(): PortMock {
     findLatestJobRunByStatuses: jest.fn().mockResolvedValue(null),
     createJobRun: jest.fn().mockResolvedValue(buildJobRunSnapshot()),
     hasRunningJobRun: jest.fn().mockResolvedValue(false),
+    failStaleRunningJobRuns: jest.fn().mockResolvedValue(0),
     updateJobRunProgress: jest.fn().mockResolvedValue(undefined),
     markJobRunFailed: jest.fn().mockResolvedValue(undefined),
     markJobRunCompleted: jest.fn().mockResolvedValue(undefined),

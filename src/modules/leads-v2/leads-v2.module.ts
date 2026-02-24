@@ -20,6 +20,7 @@ import { LeadsV2ImportService } from '@/modules/leads-v2/application/services/le
 import { LeadsV2ImportOperationsService } from '@/modules/leads-v2/application/services/leads-v2-import-operations.service';
 import { LeadsV2ListingService } from '@/modules/leads-v2/application/services/leads-v2-listing.service';
 import { LeadsV2NormalizeSearchProfileJobsService } from '@/modules/leads-v2/application/services/leads-v2-normalize-search-profile-jobs.service';
+import { LeadsV2NormalizeSearchProfileJobsScheduler } from '@/modules/leads-v2/application/services/leads-v2-normalize-search-profile-jobs.scheduler';
 import { LeadsV2SearchService } from '@/modules/leads-v2/application/services/leads-v2-search.service';
 import { LeadsV2SpreadsheetJobsScheduler } from '@/modules/leads-v2/application/services/leads-v2-spreadsheet-jobs.scheduler';
 import { LeadsV2SpreadsheetJobsService } from '@/modules/leads-v2/application/services/leads-v2-spreadsheet-jobs.service';
@@ -52,6 +53,7 @@ import { LeadsV2Controller } from '@/modules/leads-v2/interface/http/leads-v2.co
     LeadsV2SurveySpreadsheetJobsScheduler,
     LeadsV2SurveyIngestionService,
     LeadsV2NormalizeSearchProfileJobsService,
+    LeadsV2NormalizeSearchProfileJobsScheduler,
     ListLeadsV2UseCase,
     NormalizeLeadSearchProfileUseCase,
     NormalizeLeadSearchProfileV2UseCase,
