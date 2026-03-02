@@ -5,6 +5,7 @@ import {
   EXCEL_KNOWLEDGE_ALIASES,
   GENDER_ALIASES,
   JOB_ROLE_ALIASES,
+  POWER_BI_KNOWLEDGE_ALIASES,
   SENIORITY_LEVEL_ALIASES,
   type NormalizableField,
 } from './normalization.constants';
@@ -68,6 +69,10 @@ export function normalizeExcelKnowledge(valueText: string | null | undefined): s
   return normalizeByAliasesContains(valueText, EXCEL_KNOWLEDGE_ALIASES);
 }
 
+export function normalizePowerBiKnowledge(valueText: string | null | undefined): string | null {
+  return normalizeByAliasesContains(valueText, POWER_BI_KNOWLEDGE_ALIASES);
+}
+
 export function normalizeJobRole(valueText: string | null | undefined): string | null {
   return normalizeByAliasesContains(valueText, JOB_ROLE_ALIASES);
 }
@@ -87,6 +92,7 @@ export function createUnknownNormalizationCounts(): UnknownNormalizationCounts {
     companySize: {},
     educationLevel: {},
     excelKnowledge: {},
+    powerBiKnowledge: {},
     jobRole: {},
     seniorityLevel: {},
   };

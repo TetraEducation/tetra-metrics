@@ -18,11 +18,17 @@ import {
   normalizeExcelKnowledge,
   normalizeGender,
   normalizeJobRole,
+  normalizePowerBiKnowledge,
   normalizeSeniorityLevel,
   PROFILE_FIELD_TO_QUESTION_KEYS,
   parseAgeRange,
   parseSalaryRange,
+  RANKED_NORMALIZED_FIELDS,
   type NormalizableField,
+  type RankedNormalizedField,
+  shouldReplaceAgeRange,
+  shouldReplaceRankedNormalizedField,
+  shouldReplaceSalaryRange,
   type UnknownNormalizationCounts,
   withUnknownValueCount,
 } from '@/modules/leads/domain/normalization';
@@ -475,19 +481,38 @@ export class NormalizeLeadSearchProfileUseCase {
       if (!fields || fields.length === 0) continue;
 
       const current = updates.get(answer.leadId) ?? { leadId: answer.leadId };
-      // Otimização/consistência: para perguntas de faixa, parsear uma vez e preencher min+max.
       if (fields.includes('salaryMin') || fields.includes('salaryMax')) {
         const range = parseSalaryRange(answer.valueText);
-        if (fields.includes('salaryMin')) current.salaryMin = range.salary_min;
-        if (fields.includes('salaryMax')) current.salaryMax = range.salary_max;
+        if (
+          shouldReplaceSalaryRange({
+            currentMin: current.salaryMin,
+            currentMax: current.salaryMax,
+            nextMin: range.salary_min,
+            nextMax: range.salary_max,
+          })
+        ) {
+          if (fields.includes('salaryMin')) current.salaryMin = range.salary_min;
+          if (fields.includes('salaryMax')) current.salaryMax = range.salary_max;
+        }
       } else if (fields.includes('ageMin') || fields.includes('ageMax')) {
         const range = parseAgeRange(answer.valueText);
-        if (fields.includes('ageMin')) current.ageMin = range.age_min;
-        if (fields.includes('ageMax')) current.ageMax = range.age_max;
+        if (
+          shouldReplaceAgeRange({
+            currentMin: current.ageMin,
+            currentMax: current.ageMax,
+            nextMin: range.age_min,
+            nextMax: range.age_max,
+          })
+        ) {
+          if (fields.includes('ageMin')) current.ageMin = range.age_min;
+          if (fields.includes('ageMax')) current.ageMax = range.age_max;
+        }
       } else {
         for (const field of fields) {
           const parsed = this.parseFieldValue(field, answer, updatedUnknownCounts);
-          current[field] = parsed.value as never;
+          if (this.shouldAssignFieldValue(field, current[field], parsed.value)) {
+            current[field] = parsed.value as never;
+          }
           updatedUnknownCounts = parsed.unknownNormalizationCounts;
         }
       }
@@ -602,6 +627,19 @@ export class NormalizeLeadSearchProfileUseCase {
       };
     }
 
+    if (field === 'powerBiKnowledge') {
+      const normalized = normalizePowerBiKnowledge(answer.valueText);
+      return {
+        value: normalized,
+        unknownNormalizationCounts: withUnknownValueCount({
+          counts: unknownNormalizationCounts,
+          field: 'powerBiKnowledge',
+          rawValue: answer.valueText,
+          normalizedValue: normalized,
+        }),
+      };
+    }
+
     if (field === 'jobRole') {
       const normalized = normalizeJobRole(answer.valueText);
       return {
@@ -629,5 +667,21 @@ export class NormalizeLeadSearchProfileUseCase {
     }
 
     return { value: null, unknownNormalizationCounts };
+  }
+
+  private shouldAssignFieldValue(
+    field: keyof LeadSearchProfileUpsertPayload,
+    currentValue: string | number | null | undefined,
+    nextValue: string | number | null,
+  ): boolean {
+    if (RANKED_NORMALIZED_FIELDS.includes(field as RankedNormalizedField)) {
+      return shouldReplaceRankedNormalizedField({
+        field: field as RankedNormalizedField,
+        currentValue: typeof currentValue === 'string' ? currentValue : null,
+        nextValue: typeof nextValue === 'string' ? nextValue : null,
+      });
+    }
+
+    return true;
   }
 }

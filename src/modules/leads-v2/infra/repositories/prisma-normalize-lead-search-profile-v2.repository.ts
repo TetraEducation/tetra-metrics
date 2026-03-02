@@ -14,6 +14,9 @@ import type { LeadsV2SearchProfileRepositoryPort } from '@/modules/leads-v2/appl
 const JOB_FILE_NAME = 'normalize-lead-search-profile-v2';
 const JOB_FILE_PATH = 'system://lead-search-profile-v2';
 const JOB_TAG_KEY = 'normalize-lead-search-profile-v2';
+const QUESTION_KEY_MIN_TOKEN_LENGTH = 4;
+const QUESTION_KEY_MIN_COMMON_TOKENS = 2;
+const QUESTION_KEY_MIN_OVERLAP_RATIO = 0.6;
 
 type PrismaDecimal = { toNumber: () => number };
 type PrismaJobStatus = 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED';
@@ -31,7 +34,7 @@ type JobRunRow = {
 type PrismaV2Client = {
   formQuestions: {
     findMany: (args: {
-      where: { keyNormalized: { in: string[] } };
+      where?: { keyNormalized?: { in?: string[]; contains?: string } };
       select: { id: true; keyNormalized: true };
     }) => Promise<Array<{ id: string; keyNormalized: string }>>;
   };
@@ -139,8 +142,8 @@ export class PrismaNormalizeLeadSearchProfileV2Repository implements NormalizeLe
 
   async resolveQuestionIdsByNormalizedKeys(keys: string[]): Promise<Record<string, string[]>> {
     if (keys.length === 0) return {};
-    const uniqueKeys = [...new Set(keys)];
-    const rows = await this.prisma.formQuestions.findMany({
+    const uniqueKeys = [...new Set(keys.map((key) => key.trim()).filter(Boolean))];
+    const exactRows = await this.prisma.formQuestions.findMany({
       where: { keyNormalized: { in: uniqueKeys } },
       select: { id: true, keyNormalized: true },
     });
@@ -149,9 +152,27 @@ export class PrismaNormalizeLeadSearchProfileV2Repository implements NormalizeLe
     for (const key of uniqueKeys) {
       result[key] = [];
     }
-    for (const row of rows) {
+
+    for (const row of exactRows) {
       result[row.keyNormalized] = [...(result[row.keyNormalized] ?? []), row.id];
     }
+
+    const unmatchedKeys = uniqueKeys.filter((key) => (result[key] ?? []).length === 0);
+    if (unmatchedKeys.length === 0) return result;
+
+    const allRows = await this.prisma.formQuestions.findMany({
+      select: { id: true, keyNormalized: true },
+    });
+
+    for (const key of unmatchedKeys) {
+      const matchedIds = [...new Set(
+        allRows
+          .filter((row) => this.matchesQuestionKeySimilarity(key, row.keyNormalized))
+          .map((row) => row.id),
+      )].sort();
+      result[key] = matchedIds;
+    }
+
     return result;
   }
 
@@ -405,5 +426,50 @@ export class PrismaNormalizeLeadSearchProfileV2Repository implements NormalizeLe
         id: cursor.id,
       },
     };
+  }
+
+  private matchesQuestionKeySimilarity(expectedKey: string, candidateKey: string): boolean {
+    const normalizedExpected = this.normalizeQuestionKey(expectedKey);
+    const normalizedCandidate = this.normalizeQuestionKey(candidateKey);
+
+    if (!normalizedExpected || !normalizedCandidate) return false;
+    if (normalizedExpected === normalizedCandidate) return true;
+    if (
+      normalizedExpected.includes(normalizedCandidate) ||
+      normalizedCandidate.includes(normalizedExpected)
+    ) {
+      return true;
+    }
+
+    const expectedTokens = this.tokenizeQuestionKey(normalizedExpected);
+    const candidateTokens = this.tokenizeQuestionKey(normalizedCandidate);
+    if (expectedTokens.size === 0 || candidateTokens.size === 0) return false;
+
+    let commonTokens = 0;
+    for (const token of expectedTokens) {
+      if (candidateTokens.has(token)) commonTokens += 1;
+    }
+
+    if (commonTokens < QUESTION_KEY_MIN_COMMON_TOKENS) return false;
+
+    const overlapExpected = commonTokens / expectedTokens.size;
+    const overlapCandidate = commonTokens / candidateTokens.size;
+    return (
+      overlapExpected >= QUESTION_KEY_MIN_OVERLAP_RATIO ||
+      overlapCandidate >= QUESTION_KEY_MIN_OVERLAP_RATIO
+    );
+  }
+
+  private normalizeQuestionKey(value: string): string {
+    return value.trim().toLowerCase();
+  }
+
+  private tokenizeQuestionKey(value: string): Set<string> {
+    return new Set(
+      value
+        .split(/[^a-z0-9]+/i)
+        .map((token) => token.trim())
+        .filter((token) => token.length >= QUESTION_KEY_MIN_TOKEN_LENGTH),
+    );
   }
 }

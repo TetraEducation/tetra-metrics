@@ -41,6 +41,13 @@ export const LEAD_EXCEL_KNOWLEDGE_LEVELS = [
   'advanced',
 ] as const;
 export type LeadExcelKnowledgeLevel = (typeof LEAD_EXCEL_KNOWLEDGE_LEVELS)[number];
+export const LEAD_POWER_BI_KNOWLEDGE_LEVELS = [
+  'beginner',
+  'basic',
+  'intermediate',
+  'advanced',
+] as const;
+export type LeadPowerBiKnowledgeLevel = (typeof LEAD_POWER_BI_KNOWLEDGE_LEVELS)[number];
 
 export const LEAD_JOB_ROLES = [
   'manager',
@@ -229,6 +236,15 @@ export class LeadsListingSearchDto {
   @IsOptional()
   @IsIn(LEAD_EXCEL_KNOWLEDGE_LEVELS)
   excelKnowledge?: LeadExcelKnowledgeLevel;
+
+  @ApiPropertyOptional({
+    description: 'Nível de conhecimento em Power BI.',
+    enum: LEAD_POWER_BI_KNOWLEDGE_LEVELS,
+    example: 'intermediate',
+  })
+  @IsOptional()
+  @IsIn(LEAD_POWER_BI_KNOWLEDGE_LEVELS)
+  powerBiKnowledge?: LeadPowerBiKnowledgeLevel;
 
   @ApiPropertyOptional({
     description: 'Cargo/função principal do lead.',

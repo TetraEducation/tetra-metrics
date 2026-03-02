@@ -10,6 +10,7 @@ export type LeadSearchProfileV2 = {
   companySize: string | null;
   educationLevel: string | null;
   excelKnowledge: string | null;
+  powerBiKnowledge: string | null;
   jobRole: string | null;
   seniorityLevel: string | null;
   currentCompany: string | null;
@@ -24,6 +25,7 @@ export type LeadSearchProfileFiltersV2 = {
   gender?: string;
   companySize?: string;
   educationLevel?: string;
+  powerBiKnowledge?: string;
 };
 
 export type LeadSearchProfileUpsertInputV2 = {
@@ -36,6 +38,7 @@ export type LeadSearchProfileUpsertInputV2 = {
   companySize?: string | null;
   educationLevel?: string | null;
   excelKnowledge?: string | null;
+  powerBiKnowledge?: string | null;
   jobRole?: string | null;
   seniorityLevel?: string | null;
   currentCompany?: string | null;

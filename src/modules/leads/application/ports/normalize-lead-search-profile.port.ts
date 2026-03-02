@@ -36,6 +36,7 @@ export interface LeadSearchProfileUpsertPayload {
   companySize?: string | null;
   educationLevel?: string | null;
   excelKnowledge?: string | null;
+  powerBiKnowledge?: string | null;
   jobRole?: string | null;
   seniorityLevel?: string | null;
   currentCompany?: string | null;

@@ -8,9 +8,13 @@ import { NormalizeLeadSearchProfileUseCase } from './normalize-lead-search-profi
 
 const QUESTION_ID = 'q-gender-1';
 const QUESTION_EXCEL_ID = 'q-excel-1';
+const QUESTION_POWER_BI_ID = 'q-power-bi-1';
 const QUESTION_ROLE_ID = 'q-role-1';
 const QUESTION_SENIORITY_ID = 'q-seniority-1';
 const QUESTION_COMPANY_ID = 'q-company-1';
+const QUESTION_SALARY_ID = 'q-salary-1';
+const QUESTION_AGE_ID = 'q-age-1';
+const QUESTION_EDUCATION_ID = 'q-education-1';
 const JOB_NAME = 'normalize-lead-search-profile';
 
 function buildBatchItem(params: Partial<FormAnswerBatchItem>): FormAnswerBatchItem {
@@ -275,11 +279,12 @@ describe('NormalizeLeadSearchProfileUseCase', () => {
     expect(port.markJobRunCompleted).not.toHaveBeenCalled();
   });
 
-  it('normaliza e persiste excel, função, senioridade e empresa atual', async () => {
+  it('normaliza e persiste excel, power bi, função, senioridade e empresa atual', async () => {
     const port = createPortMock();
     port.resolveQuestionIdsByNormalizedKeys.mockResolvedValue({
       gender: [QUESTION_ID],
       'como-voce-considera-seus-conhecimentos-em-excel-hoje': [QUESTION_EXCEL_ID],
+      'conhecimento-power-bi': [QUESTION_POWER_BI_ID],
       'qual-das-opcoes-descreveria-melhor-a-funcao-que-voce-desempenha-ou-a-ultima-que-desempenhou':
         [QUESTION_ROLE_ID],
       'qual-seu-nivel-de-senioridade': [QUESTION_SENIORITY_ID],
@@ -296,18 +301,24 @@ describe('NormalizeLeadSearchProfileUseCase', () => {
         }),
         buildBatchItem({
           id: 'a-2',
+          questionId: QUESTION_POWER_BI_ID,
+          leadId: 'lead-42',
+          valueText: 'Avançado',
+        }),
+        buildBatchItem({
+          id: 'a-3',
           questionId: QUESTION_ROLE_ID,
           leadId: 'lead-42',
           valueText: 'Sou empreendedor',
         }),
         buildBatchItem({
-          id: 'a-3',
+          id: 'a-4',
           questionId: QUESTION_SENIORITY_ID,
           leadId: 'lead-42',
           valueText: 'Sênior',
         }),
         buildBatchItem({
-          id: 'a-4',
+          id: 'a-5',
           questionId: QUESTION_COMPANY_ID,
           leadId: 'lead-42',
           valueText: 'Açúcar & Cia',
@@ -322,6 +333,7 @@ describe('NormalizeLeadSearchProfileUseCase', () => {
       {
         leadId: 'lead-42',
         excelKnowledge: 'intermediate',
+        powerBiKnowledge: 'advanced',
         jobRole: 'entrepreneur',
         seniorityLevel: 'senior',
         currentCompany: 'acucar & cia',
@@ -353,6 +365,188 @@ describe('NormalizeLeadSearchProfileUseCase', () => {
       {
         leadId: 'lead-999',
         currentCompany: '987654',
+      },
+    ]);
+  });
+
+  it('mantem valores mais especificos quando chegam respostas com menor peso', async () => {
+    const port = createPortMock();
+    port.resolveQuestionIdsByNormalizedKeys.mockResolvedValue({
+      'qual-a-sua-renda-pessoal-mensal': [QUESTION_SALARY_ID],
+      'qual-a-sua-faixa-etaria': [QUESTION_AGE_ID],
+      'qual-a-sua-escolaridade': [QUESTION_EDUCATION_ID],
+      'como-voce-considera-seus-conhecimentos-em-excel-hoje': [QUESTION_EXCEL_ID],
+      'qual-o-porte-da-empresa-em-que-trabalha-atualmente': [QUESTION_COMPANY_ID],
+    });
+    port.readFormAnswersBatch
+      .mockResolvedValueOnce([
+        buildBatchItem({
+          id: 'a-salary-1',
+          questionId: QUESTION_SALARY_ID,
+          leadId: 'lead-priority',
+          valueText: 'R$ 5.000 a R$ 7.000',
+        }),
+        buildBatchItem({
+          id: 'a-salary-2',
+          questionId: QUESTION_SALARY_ID,
+          leadId: 'lead-priority',
+          valueText: 'acima de 5 mil',
+        }),
+        buildBatchItem({
+          id: 'a-age-1',
+          questionId: QUESTION_AGE_ID,
+          leadId: 'lead-priority',
+          valueText: '30 a 40',
+        }),
+        buildBatchItem({
+          id: 'a-age-2',
+          questionId: QUESTION_AGE_ID,
+          leadId: 'lead-priority',
+          valueText: 'até 60',
+        }),
+        buildBatchItem({
+          id: 'a-education-1',
+          questionId: QUESTION_EDUCATION_ID,
+          leadId: 'lead-priority',
+          valueText: 'Mestrado',
+        }),
+        buildBatchItem({
+          id: 'a-education-2',
+          questionId: QUESTION_EDUCATION_ID,
+          leadId: 'lead-priority',
+          valueText: 'Ensino médio completo',
+        }),
+        buildBatchItem({
+          id: 'a-excel-1',
+          questionId: QUESTION_EXCEL_ID,
+          leadId: 'lead-priority',
+          valueText: 'Avançado',
+        }),
+        buildBatchItem({
+          id: 'a-excel-2',
+          questionId: QUESTION_EXCEL_ID,
+          leadId: 'lead-priority',
+          valueText: 'Básico',
+        }),
+        buildBatchItem({
+          id: 'a-company-1',
+          questionId: QUESTION_COMPANY_ID,
+          leadId: 'lead-priority',
+          valueText: 'Enterprise',
+        }),
+        buildBatchItem({
+          id: 'a-company-2',
+          questionId: QUESTION_COMPANY_ID,
+          leadId: 'lead-priority',
+          valueText: 'MEI',
+        }),
+      ])
+      .mockResolvedValueOnce([]);
+
+    const useCase = new NormalizeLeadSearchProfileUseCase(port, createObservabilityMock());
+    await useCase.execute({ batchSize: 50 });
+
+    expect(port.upsertLeadSearchProfile).toHaveBeenCalledWith([
+      {
+        leadId: 'lead-priority',
+        salaryMin: 5000,
+        salaryMax: 7000,
+        ageMin: 30,
+        ageMax: 40,
+        educationLevel: 'master',
+        excelKnowledge: 'advanced',
+        companySize: 'enterprise',
+      },
+    ]);
+  });
+
+  it('substitui quando o novo valor e mais especifico e mantem no empate', async () => {
+    const port = createPortMock();
+    port.resolveQuestionIdsByNormalizedKeys.mockResolvedValue({
+      'qual-a-sua-renda-pessoal-mensal': [QUESTION_SALARY_ID],
+      'qual-a-sua-faixa-etaria': [QUESTION_AGE_ID],
+      'qual-a-sua-escolaridade': [QUESTION_EDUCATION_ID],
+      'como-voce-considera-seus-conhecimentos-em-excel-hoje': [QUESTION_EXCEL_ID],
+      'qual-o-porte-da-empresa-em-que-trabalha-atualmente': [QUESTION_COMPANY_ID],
+    });
+    port.readFormAnswersBatch
+      .mockResolvedValueOnce([
+        buildBatchItem({
+          id: 'b-salary-1',
+          questionId: QUESTION_SALARY_ID,
+          leadId: 'lead-priority-2',
+          valueText: 'acima de 3 mil',
+        }),
+        buildBatchItem({
+          id: 'b-salary-2',
+          questionId: QUESTION_SALARY_ID,
+          leadId: 'lead-priority-2',
+          valueText: 'R$ 5.000 a R$ 7.000',
+        }),
+        buildBatchItem({
+          id: 'b-age-1',
+          questionId: QUESTION_AGE_ID,
+          leadId: 'lead-priority-2',
+          valueText: 'até 60',
+        }),
+        buildBatchItem({
+          id: 'b-age-2',
+          questionId: QUESTION_AGE_ID,
+          leadId: 'lead-priority-2',
+          valueText: '30 a 40',
+        }),
+        buildBatchItem({
+          id: 'b-education-1',
+          questionId: QUESTION_EDUCATION_ID,
+          leadId: 'lead-priority-2',
+          valueText: 'Ensino médio completo',
+        }),
+        buildBatchItem({
+          id: 'b-education-2',
+          questionId: QUESTION_EDUCATION_ID,
+          leadId: 'lead-priority-2',
+          valueText: 'Mestrado',
+        }),
+        buildBatchItem({
+          id: 'b-excel-1',
+          questionId: QUESTION_EXCEL_ID,
+          leadId: 'lead-priority-2',
+          valueText: 'Básico',
+        }),
+        buildBatchItem({
+          id: 'b-excel-2',
+          questionId: QUESTION_EXCEL_ID,
+          leadId: 'lead-priority-2',
+          valueText: 'Avançado',
+        }),
+        buildBatchItem({
+          id: 'b-company-1',
+          questionId: QUESTION_COMPANY_ID,
+          leadId: 'lead-priority-2',
+          valueText: 'Média',
+        }),
+        buildBatchItem({
+          id: 'b-company-2',
+          questionId: QUESTION_COMPANY_ID,
+          leadId: 'lead-priority-2',
+          valueText: 'Média',
+        }),
+      ])
+      .mockResolvedValueOnce([]);
+
+    const useCase = new NormalizeLeadSearchProfileUseCase(port, createObservabilityMock());
+    await useCase.execute({ batchSize: 50 });
+
+    expect(port.upsertLeadSearchProfile).toHaveBeenCalledWith([
+      {
+        leadId: 'lead-priority-2',
+        salaryMin: 5000,
+        salaryMax: 7000,
+        ageMin: 30,
+        ageMax: 40,
+        educationLevel: 'master',
+        excelKnowledge: 'advanced',
+        companySize: 'medium',
       },
     ]);
   });

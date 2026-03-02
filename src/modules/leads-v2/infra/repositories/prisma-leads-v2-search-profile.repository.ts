@@ -1,5 +1,10 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { PRISMA_V2 } from '@/infra/prisma-v2/prisma-v2.provider';
+import {
+  shouldReplaceAgeRange,
+  shouldReplaceRankedNormalizedField,
+  shouldReplaceSalaryRange,
+} from '@/modules/leads/domain/normalization';
 import type {
   LeadSearchProfileFiltersV2,
   LeadSearchProfileUpsertInputV2,
@@ -19,6 +24,7 @@ type SearchProfileRow = {
   companySize: string | null;
   educationLevel: string | null;
   excelKnowledge: string | null;
+  powerBiKnowledge: string | null;
   jobRole: string | null;
   seniorityLevel: string | null;
   currentCompany: string | null;
@@ -39,6 +45,7 @@ type PrismaV2Client = {
         companySize: string | null;
         educationLevel: string | null;
         excelKnowledge: string | null;
+        powerBiKnowledge: string | null;
         jobRole: string | null;
         seniorityLevel: string | null;
         currentCompany: string | null;
@@ -52,6 +59,7 @@ type PrismaV2Client = {
         companySize?: string | null;
         educationLevel?: string | null;
         excelKnowledge?: string | null;
+        powerBiKnowledge?: string | null;
         jobRole?: string | null;
         seniorityLevel?: string | null;
         currentCompany?: string | null;
@@ -68,6 +76,7 @@ type PrismaV2Client = {
         gender?: string;
         companySize?: string;
         educationLevel?: string;
+        powerBiKnowledge?: string;
       };
       select: { leadId: true };
       take: number;
@@ -81,6 +90,47 @@ export class PrismaLeadsV2SearchProfileRepository implements LeadsV2SearchProfil
 
   async upsertBatch(batch: LeadSearchProfileUpsertInputV2[]): Promise<void> {
     for (const item of batch) {
+      const existing = await this.prisma.leadSearchProfile.findUnique({
+        where: { leadId: item.leadId },
+      });
+
+      const shouldUpdateSalary = shouldReplaceSalaryRange({
+        currentMin: this.toNullableNumber(existing?.salaryMin ?? null),
+        currentMax: this.toNullableNumber(existing?.salaryMax ?? null),
+        nextMin: item.salaryMin,
+        nextMax: item.salaryMax,
+      });
+
+      const shouldUpdateAge = shouldReplaceAgeRange({
+        currentMin: existing?.ageMin ?? null,
+        currentMax: existing?.ageMax ?? null,
+        nextMin: item.ageMin,
+        nextMax: item.ageMax,
+      });
+
+      const shouldUpdateEducation = shouldReplaceRankedNormalizedField({
+        field: 'educationLevel',
+        currentValue: existing?.educationLevel ?? null,
+        nextValue: item.educationLevel,
+      });
+
+      const shouldUpdateExcel = shouldReplaceRankedNormalizedField({
+        field: 'excelKnowledge',
+        currentValue: existing?.excelKnowledge ?? null,
+        nextValue: item.excelKnowledge,
+      });
+      const shouldUpdatePowerBi = shouldReplaceRankedNormalizedField({
+        field: 'powerBiKnowledge',
+        currentValue: existing?.powerBiKnowledge ?? null,
+        nextValue: item.powerBiKnowledge,
+      });
+
+      const shouldUpdateCompanySize = shouldReplaceRankedNormalizedField({
+        field: 'companySize',
+        currentValue: existing?.companySize ?? null,
+        nextValue: item.companySize,
+      });
+
       await this.prisma.leadSearchProfile.upsert({
         where: { leadId: item.leadId },
         create: {
@@ -93,19 +143,21 @@ export class PrismaLeadsV2SearchProfileRepository implements LeadsV2SearchProfil
           companySize: item.companySize ?? null,
           educationLevel: item.educationLevel ?? null,
           excelKnowledge: item.excelKnowledge ?? null,
+          powerBiKnowledge: item.powerBiKnowledge ?? null,
           jobRole: item.jobRole ?? null,
           seniorityLevel: item.seniorityLevel ?? null,
           currentCompany: item.currentCompany ?? null,
         },
         update: {
-          salaryMin: item.salaryMin,
-          salaryMax: item.salaryMax,
-          ageMin: item.ageMin,
-          ageMax: item.ageMax,
+          salaryMin: shouldUpdateSalary ? item.salaryMin : undefined,
+          salaryMax: shouldUpdateSalary ? item.salaryMax : undefined,
+          ageMin: shouldUpdateAge ? item.ageMin : undefined,
+          ageMax: shouldUpdateAge ? item.ageMax : undefined,
           gender: item.gender,
-          companySize: item.companySize,
-          educationLevel: item.educationLevel,
-          excelKnowledge: item.excelKnowledge,
+          companySize: shouldUpdateCompanySize ? item.companySize : undefined,
+          educationLevel: shouldUpdateEducation ? item.educationLevel : undefined,
+          excelKnowledge: shouldUpdateExcel ? item.excelKnowledge : undefined,
+          powerBiKnowledge: shouldUpdatePowerBi ? item.powerBiKnowledge : undefined,
           jobRole: item.jobRole,
           seniorityLevel: item.seniorityLevel,
           currentCompany: item.currentCompany,
@@ -132,6 +184,7 @@ export class PrismaLeadsV2SearchProfileRepository implements LeadsV2SearchProfil
         ...(filters.gender ? { gender: filters.gender } : {}),
         ...(filters.companySize ? { companySize: filters.companySize } : {}),
         ...(filters.educationLevel ? { educationLevel: filters.educationLevel } : {}),
+        ...(filters.powerBiKnowledge ? { powerBiKnowledge: filters.powerBiKnowledge } : {}),
       },
       select: { leadId: true },
       take: 2000,
@@ -150,6 +203,7 @@ export class PrismaLeadsV2SearchProfileRepository implements LeadsV2SearchProfil
       companySize: row.companySize,
       educationLevel: row.educationLevel,
       excelKnowledge: row.excelKnowledge,
+      powerBiKnowledge: row.powerBiKnowledge,
       jobRole: row.jobRole,
       seniorityLevel: row.seniorityLevel,
       currentCompany: row.currentCompany,

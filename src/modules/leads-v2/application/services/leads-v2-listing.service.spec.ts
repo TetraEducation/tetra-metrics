@@ -159,6 +159,7 @@ describe('LeadsV2ListingService', () => {
       companySize: 'small',
       educationLevel: 'bachelor',
       excelKnowledge: 'intermediate',
+      powerBiKnowledge: 'advanced',
       jobRole: 'manager',
       currentCompany: 'acucar',
       lastActivityFrom: '2026-01-01T00:00:00.000Z',
@@ -181,6 +182,7 @@ describe('LeadsV2ListingService', () => {
             companySize: 'small',
             educationLevel: 'bachelor',
             excelKnowledge: 'intermediate',
+            powerBiKnowledge: 'advanced',
             jobRole: 'manager',
             currentCompany: { contains: 'acucar', mode: 'insensitive' },
             AND: expect.arrayContaining([

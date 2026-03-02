@@ -115,6 +115,7 @@ export async function buildLeadsV2Where(
     params.companySize !== undefined ||
     params.educationLevel !== undefined ||
     params.excelKnowledge !== undefined ||
+    params.powerBiKnowledge !== undefined ||
     params.jobRole !== undefined ||
     params.currentCompany !== undefined;
 
@@ -142,6 +143,7 @@ export async function buildLeadsV2Where(
   if (params.companySize) searchProfileWhere.companySize = params.companySize;
   if (params.educationLevel) searchProfileWhere.educationLevel = params.educationLevel;
   if (params.excelKnowledge) searchProfileWhere.excelKnowledge = params.excelKnowledge;
+  if (params.powerBiKnowledge) searchProfileWhere.powerBiKnowledge = params.powerBiKnowledge;
   if (params.jobRole) searchProfileWhere.jobRole = params.jobRole;
   if (params.currentCompany) {
     searchProfileWhere.currentCompany = {

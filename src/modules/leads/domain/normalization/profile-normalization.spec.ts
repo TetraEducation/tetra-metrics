@@ -8,6 +8,7 @@ import {
   normalizeExcelKnowledge,
   normalizeGender,
   normalizeJobRole,
+  normalizePowerBiKnowledge,
   normalizeSeniorityLevel,
   parseAgeRange,
   parseSalaryRange,
@@ -155,6 +156,13 @@ describe('profile-normalization', () => {
       expect(normalizeExcelKnowledge('Básico')).toBe('basic');
     });
 
+    it('normaliza nível de Power BI para chaves canônicas', () => {
+      expect(normalizePowerBiKnowledge('Iniciante')).toBe('beginner');
+      expect(normalizePowerBiKnowledge('Intermediário')).toBe('intermediate');
+      expect(normalizePowerBiKnowledge('Avançado')).toBe('advanced');
+      expect(normalizePowerBiKnowledge('Básico')).toBe('basic');
+    });
+
     it('normaliza função/cargo para chaves canônicas', () => {
       expect(normalizeJobRole('Sou empreendedor')).toBe('entrepreneur');
       expect(normalizeJobRole('Gerente')).toBe('manager');
@@ -202,6 +210,7 @@ describe('profile-normalization', () => {
         companySize: {},
         educationLevel: {},
         excelKnowledge: {},
+        powerBiKnowledge: {},
         jobRole: {},
         seniorityLevel: {},
       });
