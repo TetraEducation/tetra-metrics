@@ -20,7 +20,7 @@ describe('profile-normalization', () => {
     it('parseia faixa de salário com moeda e separador', () => {
       expect(parseSalaryRange('R$ 3.500 a R$ 7.000')).toEqual({
         salary_min: 3500,
-        salary_max: 7000,
+        salary_max: 6999,
       });
     });
 
@@ -34,11 +34,18 @@ describe('profile-normalization', () => {
     it('parseia limites abertos', () => {
       expect(parseSalaryRange('até 4.000')).toEqual({
         salary_min: null,
-        salary_max: 4000,
+        salary_max: 3999,
       });
       expect(parseSalaryRange('acima de 5 mil')).toEqual({
         salary_min: 5000,
         salary_max: null,
+      });
+    });
+
+    it('decrementa limite superior em faixa fechada', () => {
+      expect(parseSalaryRange('1500 até 3000')).toEqual({
+        salary_min: 1500,
+        salary_max: 2999,
       });
     });
 
@@ -52,8 +59,8 @@ describe('profile-normalization', () => {
 
   describe('formatSalaryRange', () => {
     it('formata faixa fechada e aberta de salário', () => {
-      expect(formatSalaryRange({ salary_min: 3500, salary_max: 7000 })).toBe('3500 a 7000');
-      expect(formatSalaryRange({ salary_min: null, salary_max: 4000 })).toBe('até 4000');
+      expect(formatSalaryRange({ salary_min: 3500, salary_max: 6999 })).toBe('3500 a 7000');
+      expect(formatSalaryRange({ salary_min: null, salary_max: 3999 })).toBe('até 4000');
       expect(formatSalaryRange({ salary_min: 5000, salary_max: null })).toBe('acima de 5000');
       expect(formatSalaryRange({ salary_min: 3500, salary_max: 3500 })).toBe('3500');
       expect(formatSalaryRange({ salary_min: null, salary_max: null })).toBeNull();
@@ -72,7 +79,7 @@ describe('profile-normalization', () => {
 
   describe('parseAgeRange', () => {
     it('parseia faixa etária com hífen', () => {
-      expect(parseAgeRange('18 - 24')).toEqual({ age_min: 18, age_max: 24 });
+      expect(parseAgeRange('18 - 24')).toEqual({ age_min: 18, age_max: 23 });
     });
 
     it('parseia limite inferior com “ou mais”', () => {
@@ -86,8 +93,8 @@ describe('profile-normalization', () => {
 
   describe('formatAgeRange', () => {
     it('formata faixas etárias fechadas e abertas', () => {
-      expect(formatAgeRange({ age_min: 18, age_max: 24 })).toBe('18 a 24');
-      expect(formatAgeRange({ age_min: null, age_max: 24 })).toBe('até 24');
+      expect(formatAgeRange({ age_min: 18, age_max: 23 })).toBe('18 a 24');
+      expect(formatAgeRange({ age_min: null, age_max: 23 })).toBe('até 24');
       expect(formatAgeRange({ age_min: 35, age_max: null })).toBe('acima de 35');
       expect(formatAgeRange({ age_min: 35, age_max: 35 })).toBe('35');
       expect(formatAgeRange({ age_min: null, age_max: null })).toBeNull();

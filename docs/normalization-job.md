@@ -100,6 +100,12 @@ Campos típicos (exemplo):
 - A formatação foi centralizada em função dedicada de domínio (`formatSalaryRange` e `formatAgeRange`).
 - O parser e o formatter são validados com testes de round-trip (`parse -> format -> parse`) para garantir consistência entre forma normalizada e representação textual.
 
+### Convenção de limite superior exclusivo
+- No snapshot normalizado, o limite superior (`salary_max`, `age_max`) é armazenado como **exclusivo**:
+  - `até 1500` => `min: null`, `max: 1499`
+  - `1500 até 3000` => `min: 1500`, `max: 2999`
+- O formatter reconstrói o texto inclusivo para leitura humana (ex.: `1499` interno => `até 1500`).
+
 ## Logs estruturados esperados
 
 Cada execução deve produzir logs estruturados (JSON) com campos mínimos:
@@ -158,3 +164,20 @@ Esses logs permitem:
 Para este cenário, o ganho de controle de parsing, rastreabilidade e observabilidade supera o custo adicional de orquestração. A execução incremental com cursor/resume e upsert idempotente atende à necessidade de performance sem perder governança.
 
 **Diretriz explícita:** manter **forms como camada canônica** (fonte de verdade) e tratar o snapshot normalizado apenas como read model derivado para busca/indexação.
+
+---
+
+## Backfill pós-deploy (reprocessar do início)
+
+Após alterar regra de normalização de faixa, execute um backfill para recalcular dados já persistidos em `lead_search_profile`.
+
+### 1) Dry-run (validação)
+- `pnpm job:normalize-leads --from-start --dry-run --batch-size=500`
+
+### 2) Execução efetiva
+- `pnpm job:normalize-leads --from-start --batch-size=500`
+
+### 3) Verificação
+- Conferir logs do evento `normalize_lead_search_profile_completed`.
+- Validar amostras de leads com faixa aberta/fechada (`salary_max` e `age_max`).
+- Validar listagem/export para confirmar aderência aos novos limites.

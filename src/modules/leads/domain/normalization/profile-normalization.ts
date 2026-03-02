@@ -134,13 +134,18 @@ function parseNumericRange(valueText: string | null | undefined): {
 
   if (numbers.length >= 2) {
     const [first, second] = numbers;
-    return first <= second ? { min: first, max: second } : { min: second, max: first };
+    const sortedMin = first <= second ? first : second;
+    const sortedMax = first <= second ? second : first;
+    return {
+      min: sortedMin,
+      max: toExclusiveUpperBound({ min: sortedMin, max: sortedMax }),
+    };
   }
 
   const single = numbers[0];
   const comparable = normalizeComparableText(normalized);
   if (/^(ate|até|no maximo|no máximo)/i.test(comparable)) {
-    return { min: null, max: single };
+    return { min: null, max: toExclusiveUpperBound({ min: null, max: single }) };
   }
 
   if (/^(acima de|a partir de|mais de|>=?)/i.test(comparable)) {
@@ -159,16 +164,24 @@ function parseNumericRange(valueText: string | null | undefined): {
   return { min: single, max: single };
 }
 
+function toExclusiveUpperBound(range: NumericRange): number | null {
+  const min = normalizeRangeBound(range.min);
+  const max = normalizeRangeBound(range.max);
+  if (max === null) return null;
+  if (min !== null && max <= min) return max;
+  return max - 1;
+}
+
 function formatNumericRange(range: NumericRange): string | null {
   const min = normalizeRangeBound(range.min);
   const max = normalizeRangeBound(range.max);
 
   if (min === null && max === null) return null;
-  if (min === null) return `até ${formatNumber(max)}`;
+  if (min === null) return `até ${formatNumber(toInclusiveUpperBound(max))}`;
   if (max === null) return `acima de ${formatNumber(min)}`;
   if (min === max) return formatNumber(min);
 
-  return `${formatNumber(min)} a ${formatNumber(max)}`;
+  return `${formatNumber(min)} a ${formatNumber(toInclusiveUpperBound(max))}`;
 }
 
 function normalizeRangeBound(value: number | null): number | null {
@@ -181,6 +194,11 @@ function formatNumber(value: number | null): string {
   if (Number.isInteger(value)) return String(value);
 
   return value.toString();
+}
+
+function toInclusiveUpperBound(value: number | null): number | null {
+  if (value === null) return null;
+  return value + 1;
 }
 
 function extractNumbers(valueText: string): number[] {
