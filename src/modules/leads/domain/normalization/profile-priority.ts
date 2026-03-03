@@ -110,9 +110,29 @@ function shouldReplaceNumericRange(params: { current: NumericRange; next: Numeri
   if (nextSpec.definedBounds > currentSpec.definedBounds) return true;
   if (nextSpec.definedBounds < currentSpec.definedBounds) return false;
 
+  if (nextSpec.definedBounds === 1) {
+    return isMoreRestrictiveOpenRange(params.current, params.next);
+  }
   if (nextSpec.definedBounds < 2) return false;
 
   return nextSpec.width < currentSpec.width;
+}
+
+function isMoreRestrictiveOpenRange(current: NumericRange, next: NumericRange): boolean {
+  const currentHasMin = isFiniteNumber(current.min);
+  const currentHasMax = isFiniteNumber(current.max);
+  const nextHasMin = isFiniteNumber(next.min);
+  const nextHasMax = isFiniteNumber(next.max);
+
+  // Empate de especificidade: só substitui quando ambos usam o mesmo lado da faixa.
+  if (currentHasMin && nextHasMin && !currentHasMax && !nextHasMax) {
+    return Number(next.min) > Number(current.min);
+  }
+  if (currentHasMax && nextHasMax && !currentHasMin && !nextHasMin) {
+    return Number(next.max) < Number(current.max);
+  }
+
+  return false;
 }
 
 function getRangeSpecificity(range: NumericRange): { definedBounds: number; width: number } {

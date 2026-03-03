@@ -101,6 +101,47 @@ describe('profile-priority', () => {
         }),
       ).toBe(false);
     });
+
+    it('substitui faixa aberta de teto quando novo maximo e mais restritivo', () => {
+      expect(
+        shouldReplaceSalaryRange({
+          currentMin: null,
+          currentMax: 1500,
+          nextMin: null,
+          nextMax: 1499,
+        }),
+      ).toBe(true);
+    });
+
+    it('substitui faixa aberta de piso quando novo minimo e mais restritivo', () => {
+      expect(
+        shouldReplaceSalaryRange({
+          currentMin: 5000,
+          currentMax: null,
+          nextMin: 5001,
+          nextMax: null,
+        }),
+      ).toBe(true);
+    });
+
+    it('nao substitui quando faixa aberta nova e menos restritiva', () => {
+      expect(
+        shouldReplaceSalaryRange({
+          currentMin: null,
+          currentMax: 1499,
+          nextMin: null,
+          nextMax: 1500,
+        }),
+      ).toBe(false);
+      expect(
+        shouldReplaceSalaryRange({
+          currentMin: 5001,
+          currentMax: null,
+          nextMin: 5000,
+          nextMax: null,
+        }),
+      ).toBe(false);
+    });
   });
 
   describe('shouldReplaceAgeRange', () => {
