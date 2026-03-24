@@ -111,12 +111,12 @@ export async function buildLeadsV2Where(
     params.salaryMax !== undefined ||
     params.ageMin !== undefined ||
     params.ageMax !== undefined ||
-    params.gender !== undefined ||
-    params.companySize !== undefined ||
-    params.educationLevel !== undefined ||
-    params.excelKnowledge !== undefined ||
-    params.powerBiKnowledge !== undefined ||
-    params.jobRole !== undefined ||
+    hasListValue(params.gender) ||
+    hasListValue(params.companySize) ||
+    hasListValue(params.educationLevel) ||
+    hasListValue(params.excelKnowledge) ||
+    hasListValue(params.powerBiKnowledge) ||
+    hasListValue(params.jobRole) ||
     params.currentCompany !== undefined;
 
   if (params.salaryMin !== undefined) {
@@ -139,12 +139,24 @@ export async function buildLeadsV2Where(
       OR: [{ ageMin: null }, { ageMin: { lte: params.ageMax } }],
     });
   }
-  if (params.gender) searchProfileWhere.gender = params.gender;
-  if (params.companySize) searchProfileWhere.companySize = params.companySize;
-  if (params.educationLevel) searchProfileWhere.educationLevel = params.educationLevel;
-  if (params.excelKnowledge) searchProfileWhere.excelKnowledge = params.excelKnowledge;
-  if (params.powerBiKnowledge) searchProfileWhere.powerBiKnowledge = params.powerBiKnowledge;
-  if (params.jobRole) searchProfileWhere.jobRole = params.jobRole;
+  if (hasListValue(params.gender)) {
+    searchProfileWhere.gender = { in: params.gender };
+  }
+  if (hasListValue(params.companySize)) {
+    searchProfileWhere.companySize = { in: params.companySize };
+  }
+  if (hasListValue(params.educationLevel)) {
+    searchProfileWhere.educationLevel = { in: params.educationLevel };
+  }
+  if (hasListValue(params.excelKnowledge)) {
+    searchProfileWhere.excelKnowledge = { in: params.excelKnowledge };
+  }
+  if (hasListValue(params.powerBiKnowledge)) {
+    searchProfileWhere.powerBiKnowledge = { in: params.powerBiKnowledge };
+  }
+  if (hasListValue(params.jobRole)) {
+    searchProfileWhere.jobRole = { in: params.jobRole };
+  }
   if (params.currentCompany) {
     searchProfileWhere.currentCompany = {
       contains: params.currentCompany,
@@ -163,6 +175,10 @@ export async function buildLeadsV2Where(
   }
 
   return { where, shortCircuit: false };
+}
+
+function hasListValue<T extends string>(value?: readonly T[]): value is T[] {
+  return Array.isArray(value) && value.length > 0;
 }
 
 function normalizePhone(value?: string): string | null {

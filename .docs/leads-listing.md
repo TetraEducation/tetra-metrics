@@ -248,6 +248,14 @@ A rota da V2 reusa o DTO [`LeadsListingSearchDto`](src/modules/leads/application
 | `orderBy`          | enum    | Ordenação por `last_activity_at`, `created_at` ou `full_name`. |
 | `orderDirection`   | enum    | Direção da ordenação: `asc` ou `desc`. |
 
+Para filtros enumerados como `companySize`, `jobRole`, `educationLevel`, `excelKnowledge`, `powerBiKnowledge` e `gender`, é possível enviar múltiplos valores separados por vírgula (ex.: `companySize=small,medium`). O backend também aceita parâmetros repetidos (`companySize=small&companySize=medium`) e normaliza tudo para uma lista interna que aplica o filtro `IN`.
+
+**Exemplo com múltiplos valores**
+
+```http
+GET /v2/leads/list?page=1&perPage=20&orderBy=last_activity_at&orderDirection=desc&companySize=small,medium&gender=female,male
+```
+
 **Erro de validação**
 
 | Código | Condição |

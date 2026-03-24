@@ -62,6 +62,21 @@ export const LEAD_JOB_ROLES = [
 ] as const;
 export type LeadJobRole = (typeof LEAD_JOB_ROLES)[number];
 
+function normalizeMultiValueParam(value: unknown): string[] | undefined {
+  if (value === null || value === undefined || value === '') return undefined;
+  const entries = Array.isArray(value) ? value : [value];
+  const values: string[] = [];
+  for (const entry of entries) {
+    if (entry === null || entry === undefined) continue;
+    const text = String(entry);
+    for (const chunk of text.split(',')) {
+      const trimmed = chunk.trim();
+      if (trimmed) values.push(trimmed);
+    }
+  }
+  return values.length > 0 ? values : undefined;
+}
+
 function toOptionalNumberOrOriginal(value: unknown): number | unknown | undefined {
   if (value === null || value === undefined || value === '') return undefined;
   const n = typeof value === 'number' ? value : Number(String(value).trim().replace(',', '.'));
@@ -207,8 +222,9 @@ export class LeadsListingSearchDto {
     example: 'female',
   })
   @IsOptional()
-  @IsIn(LEAD_GENDERS)
-  gender?: LeadGender;
+  @IsIn(LEAD_GENDERS, { each: true })
+  @Transform(({ value }) => normalizeMultiValueParam(value))
+  gender?: LeadGender[];
 
   @ApiPropertyOptional({
     description: 'Porte da empresa atual do lead.',
@@ -216,8 +232,9 @@ export class LeadsListingSearchDto {
     example: 'medium',
   })
   @IsOptional()
-  @IsIn(LEAD_COMPANY_SIZES)
-  companySize?: LeadCompanySize;
+  @IsIn(LEAD_COMPANY_SIZES, { each: true })
+  @Transform(({ value }) => normalizeMultiValueParam(value))
+  companySize?: LeadCompanySize[];
 
   @ApiPropertyOptional({
     description: 'Nível de escolaridade.',
@@ -225,8 +242,9 @@ export class LeadsListingSearchDto {
     example: 'bachelor',
   })
   @IsOptional()
-  @IsIn(LEAD_EDUCATION_LEVELS)
-  educationLevel?: LeadEducationLevel;
+  @IsIn(LEAD_EDUCATION_LEVELS, { each: true })
+  @Transform(({ value }) => normalizeMultiValueParam(value))
+  educationLevel?: LeadEducationLevel[];
 
   @ApiPropertyOptional({
     description: 'Nível de conhecimento em Excel.',
@@ -234,8 +252,9 @@ export class LeadsListingSearchDto {
     example: 'intermediate',
   })
   @IsOptional()
-  @IsIn(LEAD_EXCEL_KNOWLEDGE_LEVELS)
-  excelKnowledge?: LeadExcelKnowledgeLevel;
+  @IsIn(LEAD_EXCEL_KNOWLEDGE_LEVELS, { each: true })
+  @Transform(({ value }) => normalizeMultiValueParam(value))
+  excelKnowledge?: LeadExcelKnowledgeLevel[];
 
   @ApiPropertyOptional({
     description: 'Nível de conhecimento em Power BI.',
@@ -243,8 +262,9 @@ export class LeadsListingSearchDto {
     example: 'intermediate',
   })
   @IsOptional()
-  @IsIn(LEAD_POWER_BI_KNOWLEDGE_LEVELS)
-  powerBiKnowledge?: LeadPowerBiKnowledgeLevel;
+  @IsIn(LEAD_POWER_BI_KNOWLEDGE_LEVELS, { each: true })
+  @Transform(({ value }) => normalizeMultiValueParam(value))
+  powerBiKnowledge?: LeadPowerBiKnowledgeLevel[];
 
   @ApiPropertyOptional({
     description: 'Cargo/função principal do lead.',
@@ -252,8 +272,9 @@ export class LeadsListingSearchDto {
     example: 'analyst',
   })
   @IsOptional()
-  @IsIn(LEAD_JOB_ROLES)
-  jobRole?: LeadJobRole;
+  @IsIn(LEAD_JOB_ROLES, { each: true })
+  @Transform(({ value }) => normalizeMultiValueParam(value))
+  jobRole?: LeadJobRole[];
 
   @ApiPropertyOptional({
     description: 'Nome da empresa atual do lead.',
